@@ -55,11 +55,11 @@ type CustomClaims struct {
 }
 
 const (
-	createPath  = "/Auth/Create"
-	deletePath  = "/Auth/Delete"
-	loginPath   = "/Auth/Login"
-	logoutPath  = "/Auth/Logout"
-	refreshPath = "/Auth/Refresh"
+	createPath  = "/auth/create"
+	deletePath  = "/auth/delete"
+	loginPath   = "/auth/login"
+	logoutPath  = "/auth/logout"
+	refreshPath = "/auth/refresh"
 
 	authJWTAuthKVS = "authJWTAuth"
 	authTokenKVS   = "authJWTToken"
