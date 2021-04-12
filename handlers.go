@@ -29,7 +29,7 @@ func HandlerFuncNoAuthWrapper(hf func(w http.ResponseWriter, r *http.Request)) f
 		rs := &ResponseStatus{w, "", 0}
 		hf(rs, r)
 		if r.Method == http.MethodDelete || r.Method == http.MethodPost || r.Method == http.MethodPut {
-			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n", rs.StatusCode, r, rs.Body)
+			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", rs.StatusCode, r, rs.Body)
 		}
 	}
 }
@@ -46,7 +46,7 @@ func HandlerFuncAuthJWTWrapper(hf func(w http.ResponseWriter, r *http.Request)) 
 		}
 		hf(rs, r)
 		if r.Method == http.MethodDelete || r.Method == http.MethodPost || r.Method == http.MethodPut {
-			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n", rs.StatusCode, r, rs.Body)
+			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", rs.StatusCode, r, rs.Body)
 		}
 	}
 }
@@ -60,9 +60,9 @@ func handlerCreate(w http.ResponseWriter, r *http.Request) {
 	em := ""
 	pw := ""
 	cred := Credential{Email: &em, Password: &pw}
-	if err := httph.HTTPBodyUnmarshal(w, r, &cred); err != nil {
+	if err := httph.BodyUnmarshal(w, r, &cred); err != nil {
 		logh.Map[config.LogName].Printf(logh.Error, "create error:%v", err)
-		// WriteHeader provided by HTTPBodyUnmarshal
+		// WriteHeader provided by BodyUnmarshal
 		return
 	}
 
@@ -114,9 +114,9 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	em := ""
 	pw := ""
 	cred := Credential{Email: &em, Password: &pw}
-	if err := httph.HTTPBodyUnmarshal(w, r, &cred); err != nil {
+	if err := httph.BodyUnmarshal(w, r, &cred); err != nil {
 		logh.Map[config.LogName].Printf(logh.Error, "login error:%v", err)
-		// WriteHeader provided by HTTPBodyUnmarshal
+		// WriteHeader provided by BodyUnmarshal
 		return
 	}
 

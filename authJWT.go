@@ -139,7 +139,7 @@ func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error
 	b, err := kviToken.Get(claims.TokenID)
 	if b == nil || err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
-		return nil, fmt.Errorf("token not valid")
+		return nil, fmt.Errorf("%s token not valid", runtimeh.SourceInfo())
 	}
 	return claims, nil
 }
@@ -147,7 +147,7 @@ func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error
 // validate will validate the Credential, as well as trim space from members.
 func (cred *Credential) validate() error {
 	if cred.Email == nil || cred.Password == nil {
-		return fmt.Errorf("either email or password were nil in credential")
+		return fmt.Errorf("%s either email or password were nil in credential", runtimeh.SourceInfo())
 	}
 
 	em := strings.TrimSpace(*cred.Email)
@@ -156,7 +156,7 @@ func (cred *Credential) validate() error {
 	cred.Password = &pwd
 	for _, v := range passwordValidation {
 		if v.FindString(*cred.Password) == "" {
-			return fmt.Errorf("password does not meet validation criteria %s", v.String())
+			return fmt.Errorf("%s password does not meet validation criteria %s", runtimeh.SourceInfo(), v.String())
 		}
 	}
 	return nil
@@ -227,7 +227,7 @@ func parseClaims(tokenString string) (*CustomClaims, error) {
 
 func passwordHash(pasword string) (hash []byte, err error) {
 	if hash, err = bcrypt.GenerateFromPassword([]byte(pasword), bcrypt.DefaultCost); err != nil {
-		return nil, fmt.Errorf("%s could not hash password, error: %+v", runtimeh.SourceInfo(), err)
+		return nil, runtimeh.SourceInfoError("could not hash password, error: %+v", err)
 	}
 	return hash, nil
 }
@@ -253,7 +253,7 @@ func uniqueID(includeHyphens bool) (id string, err error) {
 	idBin := make([]byte, 16)
 	_, err = rand.Read(idBin)
 	if err != nil {
-		err := fmt.Errorf("creating unique binary ID, error: %+v", err)
+		err := runtimeh.SourceInfoError("creating unique binary ID, error: %+v", err)
 		fmt.Printf("%+v\n", err)
 		return "", err
 	}
