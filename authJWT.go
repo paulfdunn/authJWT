@@ -3,6 +3,8 @@
 // an expiration. Callers will need to wrap their handlers using HandlerFuncAuthJWTWrapper;
 // see the test TestHandlerFuncAuthJWTWrapper for an example.
 // The provided wrappers log all DELETE/POST/PUT calls to logh.Map[*cnfg.AuditLogName].
+// Tokens are stored locally to allow invalidating the token for logout.
+// Use only HTTPS to prevent tokens being stolen in-flight; I.E. public wi-fi.
 
 package authJWT
 
@@ -28,6 +30,7 @@ type Config struct {
 	AuditLogName           string
 	DataSourceName         string
 	CreateRequiresAuth     bool
+	JWTAuthRemoveInterval  time.Duration
 	JWTAuthTimeoutInterval time.Duration
 	JWTKeyFilepath         string
 	LogName                string
@@ -66,8 +69,9 @@ const (
 )
 
 var (
-	config             Config
-	kviAuth            kvs.KVS
+	config  Config
+	kviAuth kvs.KVS
+	// The token KVS stores the ID and the expire time.
 	kviToken           kvs.KVS
 	passwordValidation []*regexp.Regexp
 
@@ -106,6 +110,8 @@ func Init(configIn Config) {
 	initializeKVS(config.DataSourceName)
 
 	passwordValidationLoad()
+
+	removeExpiredTokens(config.JWTAuthRemoveInterval, config.JWTAuthTimeoutInterval)
 }
 
 // AuthCreate adds an ID/authentication pair to the KVS. Public to allow apps to
@@ -160,13 +166,6 @@ func (cred *Credential) validate() error {
 		}
 	}
 	return nil
-}
-
-// authDelete removes an ID/authentication pair from the KVS.
-// Returns the count, which is zero (and no error) if the id did not exist.
-func authDelete(id string) (int64, error) {
-	c, err := kviAuth.Delete(id)
-	return c, runtimeh.SourceInfoError("authDelete error", err)
 }
 
 func authGet(id string) (authentication, error) {
@@ -234,6 +233,41 @@ func passwordHash(pasword string) (hash []byte, err error) {
 
 func passwordVerifyHash(password string, hash []byte) error {
 	return bcrypt.CompareHashAndPassword(hash, []byte(password))
+}
+
+func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
+	go func() {
+		keys, err := kviToken.Keys()
+		if err == nil {
+			for i := range keys {
+				b, err := kviToken.Get(keys[i])
+				if err != nil {
+					logh.Map[config.LogName].Printf(logh.Error, "getting token: %v\n", err)
+					continue
+				}
+
+				buf := bytes.NewBuffer(b)
+				var expiresAt int64
+				err = binary.Read(buf, binary.LittleEndian, expiresAt)
+				if err != nil {
+					logh.Map[config.LogName].Printf(logh.Error, "reading exipresAt: %v\n", err)
+					continue
+				}
+				if time.Since(time.Unix(expiresAt, 0)) > expireInterval {
+					_, err := kviToken.Delete(keys[i])
+					if err != nil {
+						logh.Map[config.LogName].Printf(logh.Error, "deleting expired token: %v\n", err)
+						continue
+					}
+				}
+
+			}
+		} else {
+			logh.Map[config.LogName].Printf(logh.Error, "getting keys: %v\n", err)
+		}
+
+		time.Sleep(rate)
+	}()
 }
 
 func tokenFromRequestHeader(r *http.Request) (string, error) {

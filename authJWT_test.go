@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/paulfdunn/osh/runtimeh"
 )
 
 var (
@@ -449,6 +450,40 @@ func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
 
 }
 
+func TestRemoveExpiredTokens(t *testing.T) {
+	testSetup(t)
+
+	_, credBytes, err := createAuth(t, nil)
+	if err != nil {
+		return
+	}
+
+	tokenBytes, _, err := login(t, credBytes)
+	if err != nil {
+		return
+	}
+
+	claimsOut, err := parseClaims(string(tokenBytes))
+	if err != nil {
+		t.Errorf("parseClaims error: %v", err)
+		return
+	}
+	b, err := kviToken.Get(claimsOut.TokenID)
+	if b == nil || err != nil {
+		t.Errorf("kviToken.Get error: %v", err)
+		return
+	}
+
+	removeExpiredTokens(time.Duration(100)*time.Millisecond, time.Duration(100)*time.Millisecond)
+	time.Sleep(time.Duration(200) * time.Millisecond)
+	b, _ = kviToken.Get(claimsOut.Id)
+	if b != nil {
+		t.Errorf("kviToken.Get returned bytes and should not have")
+		return
+	}
+
+}
+
 func TestValidateNegative(t *testing.T) {
 	testSetup(t)
 
@@ -493,6 +528,13 @@ func TestUniqueID(t *testing.T) {
 	if !m || err != nil {
 		t.Errorf("id not right format, id: %s", id)
 	}
+}
+
+// authDelete removes an ID/authentication pair from the KVS.
+// Returns the count, which is zero (and no error) if the id did not exist.
+func authDelete(id string) (int64, error) {
+	c, err := kviAuth.Delete(id)
+	return c, runtimeh.SourceInfoError("authDelete error", err)
 }
 
 func createAuth(t *testing.T, email *string) (string, []byte, error) {
