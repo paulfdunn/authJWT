@@ -1,11 +1,18 @@
 // Package authJWT implements JWT authentication.
 // This is a simple implementation, using a single authentication token with
-// an expiration. Callers will need to wrap their handlers using HandlerFuncAuthJWTWrapper;
+// an expiration.
+//
+// Callers will need to wrap their handlers using HandlerFuncAuthJWTWrapper;
 // see the test TestHandlerFuncAuthJWTWrapper for an example.
 // The provided wrappers log all DELETE/POST/PUT calls to logh.Map[*cnfg.AuditLogName].
-// Tokens are stored locally to allow invalidating the token for logout.
+// Tokens are stored locally to allow invalidating the token for logout, or
+// all tokens for the user.
+//
 // Use only HTTPS to prevent tokens being stolen in-flight; I.E. public wi-fi.
-
+// Callers should not store the tokens. Use the token for the session only; the user
+// can save their credentials via their browser, if they chose, to make logging
+// in easier. Do also allow your users access to logout-all, as well as to the
+// number of tokens available for their ID.
 package authJWT
 
 import (
@@ -57,12 +64,18 @@ type CustomClaims struct {
 	TokenID string
 }
 
+type Info struct {
+	OutstandingTokens int
+}
+
 const (
-	createPath  = "/auth/create"
-	deletePath  = "/auth/delete"
-	loginPath   = "/auth/login"
-	logoutPath  = "/auth/logout"
-	refreshPath = "/auth/refresh"
+	createPath    = "/auth/create"
+	deletePath    = "/auth/delete"
+	infoPath      = "/auth/info"
+	loginPath     = "/auth/login"
+	logoutPath    = "/auth/logout"
+	logoutAllPath = "/auth/logout-all"
+	refreshPath   = "/auth/refresh"
 
 	authJWTAuthKVS = "authJWTAuth"
 	authTokenKVS   = "authJWTToken"
@@ -71,7 +84,8 @@ const (
 var (
 	config  Config
 	kviAuth kvs.KVS
-	// The token KVS stores the ID and the expire time.
+	// The token KVS stores the key, encoded as Email|TokenID, and the experation in
+	// Unix (seconds) time.
 	kviToken           kvs.KVS
 	passwordValidation []*regexp.Regexp
 
@@ -97,12 +111,18 @@ func Init(configIn Config) {
 	dltpath := deletePath + "/"
 	http.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", dltpath)
+	infpath := infoPath + "/"
+	http.HandleFunc(infpath, handlerInfo)
+	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", infpath)
 	lipath := loginPath + "/"
 	http.HandleFunc(lipath, handlerLogin)
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lipath)
 	lopath := logoutPath + "/"
 	http.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogout))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lopath)
+	loapath := logoutAllPath + "/"
+	http.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
+	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", loapath)
 	rfpath := refreshPath + "/"
 	http.HandleFunc(rfpath, HandlerFuncAuthJWTWrapper(handlerRefresh))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", rfpath)
@@ -142,12 +162,16 @@ func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error
 		w.WriteHeader(http.StatusUnauthorized)
 		return nil, err
 	}
-	b, err := kviToken.Get(claims.TokenID)
+	b, err := kviToken.Get(claims.tokenKVSKey())
 	if b == nil || err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		return nil, fmt.Errorf("%s token not valid", runtimeh.SourceInfo())
 	}
 	return claims, nil
+}
+
+func (cc CustomClaims) tokenKVSKey() string {
+	return cc.Email + "|" + cc.TokenID
 }
 
 // validate will validate the Credential, as well as trim space from members.
@@ -203,7 +227,7 @@ func authTokenStringCreate(email string) (string, error) {
 	if err != nil {
 		runtimeh.SourceInfoError("binary.Write failed", err)
 	}
-	kviToken.Set(tokenID, buf.Bytes())
+	kviToken.Set(claims.tokenKVSKey(), buf.Bytes())
 	return token.SignedString(tokenKey)
 }
 
@@ -248,9 +272,9 @@ func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
 
 				buf := bytes.NewBuffer(b)
 				var expiresAt int64
-				err = binary.Read(buf, binary.LittleEndian, expiresAt)
+				err = binary.Read(buf, binary.LittleEndian, &expiresAt)
 				if err != nil {
-					logh.Map[config.LogName].Printf(logh.Error, "reading exipresAt: %v\n", err)
+					logh.Map[config.LogName].Printf(logh.Error, "reading expiresAt: %v\n", err)
 					continue
 				}
 				if time.Since(time.Unix(expiresAt, 0)) > expireInterval {
@@ -297,4 +321,30 @@ func uniqueID(includeHyphens bool) (id string, err error) {
 	}
 
 	return fmt.Sprintf("%x", idBin[:]), err
+}
+
+func userTokens(email string, remove bool) (int, error) {
+	keys, err := kviToken.Keys()
+	if err != nil {
+		logh.Map[config.LogName].Printf(logh.Error, "getting keys: %v\n", err)
+		return 0, err
+	}
+
+	count := 0
+	for i := range keys {
+		_, err := kviToken.Get(keys[i])
+		if err != nil {
+			logh.Map[config.LogName].Printf(logh.Error, "getting token: %v\n", err)
+			return count, err
+		}
+
+		if strings.HasPrefix(keys[i], email) {
+			if remove {
+				kviToken.Delete(keys[i])
+			}
+			count++
+		}
+	}
+
+	return count, nil
 }

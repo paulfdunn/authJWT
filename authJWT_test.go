@@ -203,6 +203,70 @@ func TestHandlerDelete(t *testing.T) {
 
 }
 
+func TestInfo(t *testing.T) {
+	testSetup(t)
+
+	// Just put a random user in the DB
+	_, credBytes, err := createAuth(t, nil)
+	if err != nil {
+		return
+	}
+
+	_, _, err = login(t, credBytes)
+	if err != nil {
+		return
+	}
+
+	// Then add three tokens for the same user.
+	manyLogins := 3
+	userManyLogins := "many@login.com"
+	var tokenBytes []byte
+	for i := 0; i < manyLogins; i++ {
+		_, credBytes, err := createAuth(t, &userManyLogins)
+		if err != nil {
+			return
+		}
+
+		tokenBytes, _, err = login(t, credBytes)
+		if err != nil {
+			return
+		}
+	}
+
+	testServer := httptest.NewServer(http.HandlerFunc(HandlerFuncAuthJWTWrapper(handlerInfo)))
+	defer testServer.Close()
+	client := &http.Client{}
+	req, err := http.NewRequest(http.MethodGet, testServer.URL, nil)
+	if err != nil {
+		t.Errorf("NewRequest error: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+string(tokenBytes))
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Errorf("client.Do error: %v", err)
+		return
+	}
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		t.Errorf("reading body error: %v", err)
+		return
+	}
+	info := Info{}
+	err = json.Unmarshal(b, &info)
+	if err != nil {
+		t.Errorf("unmarshal error: %v", err)
+		return
+	}
+	fmt.Printf("%+v", info)
+	if err != nil {
+		t.Errorf("POST error: %v", err)
+		return
+	}
+	if info.OutstandingTokens != 3 {
+		t.Errorf("Wrong number of OutstandingTokens")
+	}
+}
 func TestLogin(t *testing.T) {
 	testSetup(t)
 
@@ -330,12 +394,69 @@ func TestLogout(t *testing.T) {
 		t.Errorf("Logout did not return proper status or was nil: %d", resp.StatusCode)
 		return
 	}
-	b, err := kviToken.Get(claims.TokenID)
+	b, err := kviToken.Get(claims.tokenKVSKey())
 	if !(b == nil && err == nil) {
 		t.Error("TokenID not deleted.")
 		return
 	}
+}
 
+func TestLogoutAll(t *testing.T) {
+	testSetup(t)
+
+	// Just put a random user in the DB
+	_, credBytes, err := createAuth(t, nil)
+	if err != nil {
+		return
+	}
+
+	_, _, err = login(t, credBytes)
+	if err != nil {
+		return
+	}
+
+	// Then add three tokens for the same user.
+	manyLogins := 3
+	userManyLogins := "many@login.com"
+	var tokenBytes []byte
+	for i := 0; i < manyLogins; i++ {
+		_, credBytes, err := createAuth(t, &userManyLogins)
+		if err != nil {
+			return
+		}
+
+		tokenBytes, _, err = login(t, credBytes)
+		if err != nil {
+			return
+		}
+	}
+
+	testServer := httptest.NewServer(http.HandlerFunc(HandlerFuncAuthJWTWrapper(handlerLogoutAll)))
+	defer testServer.Close()
+	client := &http.Client{}
+	req, err := http.NewRequest(http.MethodDelete, testServer.URL, nil)
+	if err != nil {
+		t.Errorf("NewRequest error: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+string(tokenBytes))
+	_, err = client.Do(req)
+	if err != nil {
+		t.Errorf("POST error: %v", err)
+		return
+	}
+
+	// This can be used to test the function directly.
+	// r, err := removeUserTokens(userManyLogins)
+	// if r != manyLogins || err != nil {
+	// 	t.Errorf("removeUserTokens returned error or wrong number of key removals")
+	// 	return
+	// }
+
+	k, err := kviToken.Keys()
+	if len(k) != 1 || err != nil {
+		t.Errorf("There should still be one user token.")
+	}
 }
 
 func TestRefresh(t *testing.T) {
@@ -453,35 +574,41 @@ func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
 func TestRemoveExpiredTokens(t *testing.T) {
 	testSetup(t)
 
-	_, credBytes, err := createAuth(t, nil)
-	if err != nil {
-		return
-	}
+	durations := []time.Duration{time.Duration(0), time.Duration(500) * time.Millisecond}
+	removeDuration := time.Duration(100) * time.Millisecond
+	for _, v := range durations {
+		config.JWTAuthTimeoutInterval = v
+		_, credBytes, err := createAuth(t, nil)
+		if err != nil {
+			return
+		}
 
-	tokenBytes, _, err := login(t, credBytes)
-	if err != nil {
-		return
-	}
+		tokenBytes, _, err := login(t, credBytes)
+		if err != nil {
+			return
+		}
 
-	claimsOut, err := parseClaims(string(tokenBytes))
-	if err != nil {
-		t.Errorf("parseClaims error: %v", err)
-		return
-	}
-	b, err := kviToken.Get(claimsOut.TokenID)
-	if b == nil || err != nil {
-		t.Errorf("kviToken.Get error: %v", err)
-		return
-	}
+		claimsOut, err := parseClaims(string(tokenBytes))
+		if err != nil {
+			t.Errorf("parseClaims error: %v", err)
+			return
+		}
+		b, err := kviToken.Get(claimsOut.tokenKVSKey())
+		if b == nil || err != nil {
+			t.Errorf("kviToken.Get error: %v", err)
+			return
+		}
 
-	removeExpiredTokens(time.Duration(100)*time.Millisecond, time.Duration(100)*time.Millisecond)
-	time.Sleep(time.Duration(200) * time.Millisecond)
-	b, _ = kviToken.Get(claimsOut.Id)
-	if b != nil {
-		t.Errorf("kviToken.Get returned bytes and should not have")
-		return
+		removeExpiredTokens(removeDuration, removeDuration)
+		time.Sleep(removeDuration * 2)
+		b, _ = kviToken.Get(claimsOut.tokenKVSKey())
+		if b != nil && v < removeDuration {
+			t.Errorf("kviToken.Get returned bytes and should not have")
+			return
+		} else {
+			fmt.Printf("TestRemoveExpiredTokens negative test passed")
+		}
 	}
-
 }
 
 func TestValidateNegative(t *testing.T) {
@@ -517,14 +644,14 @@ func TestValidatePositive(t *testing.T) {
 func TestUniqueID(t *testing.T) {
 	id, err := uniqueID(false)
 	m := regexp.MustCompile("[0-9a-f]{8}[0-9a-f]{4}[0-9a-f]{4}[0-9a-f]{4}[0-9a-f]{12}").MatchString(id)
-	fmt.Printf("uniqueID:%s\n", id)
+	// fmt.Printf("uniqueID:%s\n", id)
 	if !m || err != nil {
 		t.Errorf("id not right format, id: %s", id)
 	}
 
 	id, err = uniqueID(true)
 	m = regexp.MustCompile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}").MatchString(id)
-	fmt.Printf("uniqueID:%s\n", id)
+	// fmt.Printf("uniqueID:%s\n", id)
 	if !m || err != nil {
 		t.Errorf("id not right format, id: %s", id)
 	}
