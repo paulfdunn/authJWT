@@ -112,7 +112,7 @@ func Init(configIn Config) {
 	http.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", dltpath)
 	infpath := infoPath + "/"
-	http.HandleFunc(infpath, handlerInfo)
+	http.HandleFunc(infpath, HandlerFuncAuthJWTWrapper(handlerInfo))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", infpath)
 	lipath := loginPath + "/"
 	http.HandleFunc(lipath, handlerLogin)
@@ -121,7 +121,7 @@ func Init(configIn Config) {
 	http.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogout))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lopath)
 	loapath := logoutAllPath + "/"
-	http.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
+	http.HandleFunc(loapath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", loapath)
 	rfpath := refreshPath + "/"
 	http.HandleFunc(rfpath, HandlerFuncAuthJWTWrapper(handlerRefresh))
