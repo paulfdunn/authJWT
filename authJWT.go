@@ -42,6 +42,13 @@ type Config struct {
 	JWTKeyFilepath         string
 	LogName                string
 	PasswordValidation     []string
+	PathCreate             string
+	PathDelete             string
+	PathInfo               string
+	PathLogin              string
+	PathLogout             string
+	PathLogoutAll          string
+	PathRefresh            string
 }
 
 // authentication is persisted data about a user and their authorization.
@@ -69,14 +76,6 @@ type Info struct {
 }
 
 const (
-	createPath    = "/auth/create"
-	deletePath    = "/auth/delete"
-	infoPath      = "/auth/info"
-	loginPath     = "/auth/login"
-	logoutPath    = "/auth/logout"
-	logoutAllPath = "/auth/logout-all"
-	refreshPath   = "/auth/refresh"
-
 	authJWTAuthKVS = "authJWTAuth"
 	authTokenKVS   = "authJWTToken"
 )
@@ -101,29 +100,29 @@ func Init(configIn Config) {
 	tokenKeyLoad(config.JWTKeyFilepath)
 
 	// Registering with the trailing slash means the naked path is redirected to this path.
-	crpath := createPath + "/"
+	crpath := config.PathCreate + "/"
 	if config.CreateRequiresAuth {
 		http.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreate))
 	} else {
 		http.HandleFunc(crpath, handlerCreate)
 	}
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", crpath)
-	dltpath := deletePath + "/"
+	dltpath := config.PathDelete + "/"
 	http.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", dltpath)
-	infpath := infoPath + "/"
+	infpath := config.PathInfo + "/"
 	http.HandleFunc(infpath, HandlerFuncAuthJWTWrapper(handlerInfo))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", infpath)
-	lipath := loginPath + "/"
+	lipath := config.PathLogin + "/"
 	http.HandleFunc(lipath, handlerLogin)
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lipath)
-	lopath := logoutPath + "/"
+	lopath := config.PathLogout + "/"
 	http.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogout))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lopath)
-	loapath := logoutAllPath + "/"
+	loapath := config.PathLogoutAll + "/"
 	http.HandleFunc(loapath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", loapath)
-	rfpath := refreshPath + "/"
+	rfpath := config.PathRefresh + "/"
 	http.HandleFunc(rfpath, HandlerFuncAuthJWTWrapper(handlerRefresh))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", rfpath)
 
