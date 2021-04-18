@@ -65,6 +65,51 @@ func TestAuthCreateGetDelete(t *testing.T) {
 	}
 }
 
+func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
+	testSetup(t)
+
+	// handler does not require auth
+	testServerNoWrap := httptest.NewServer(http.HandlerFunc(handlerTest))
+	resp, _ := http.Get(testServerNoWrap.URL)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("HandlerFuncAuthJWTWrapper method did not return proper status: %d", resp.StatusCode)
+		return
+	}
+	testServerNoWrap.Close()
+
+	// handler DOES require auth, but none provided.
+	testServerWrapped := httptest.NewServer(http.HandlerFunc(HandlerFuncAuthJWTWrapper(handlerTest)))
+	resp, _ = http.Get(testServerWrapped.URL)
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("HandlerFuncAuthJWTWrapper method did not return proper status: %d", resp.StatusCode)
+		return
+	}
+
+	// handler still requires auth, provide token.
+	_, credBytes, err := createAuth(t, nil)
+	if err != nil {
+		return
+	}
+	tokenBytes, _, err := login(t, credBytes)
+	if err != nil {
+		return
+	}
+	client := &http.Client{}
+	req, err := http.NewRequest(http.MethodDelete, testServerWrapped.URL, nil)
+	if err != nil {
+		t.Errorf("NewRequest error: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+string(tokenBytes))
+	resp, err = client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusNoContent {
+		t.Errorf("HandlerFuncAuthJWTWrapper did not return proper status: %d", resp.StatusCode)
+		return
+	}
+
+	testServerWrapped.Close()
+}
+
 func TestAuthTokenCreate(t *testing.T) {
 	testSetup(t)
 
@@ -203,7 +248,7 @@ func TestHandlerDelete(t *testing.T) {
 
 }
 
-func TestInfo(t *testing.T) {
+func TestHandlerInfo(t *testing.T) {
 	testSetup(t)
 
 	// Just put a random user in the DB
@@ -267,7 +312,7 @@ func TestInfo(t *testing.T) {
 		t.Errorf("Wrong number of OutstandingTokens")
 	}
 }
-func TestLogin(t *testing.T) {
+func TestHandlerLogin(t *testing.T) {
 	testSetup(t)
 
 	// 0 - positive test, 1 - negative test; login with no auth created.
@@ -340,7 +385,7 @@ func TestLogin(t *testing.T) {
 	}
 }
 
-func TestLogout(t *testing.T) {
+func TestHandlerLogout(t *testing.T) {
 	testSetup(t)
 
 	_, credBytes, err := createAuth(t, nil)
@@ -401,7 +446,7 @@ func TestLogout(t *testing.T) {
 	}
 }
 
-func TestLogoutAll(t *testing.T) {
+func TestHandlerLogoutAll(t *testing.T) {
 	testSetup(t)
 
 	// Just put a random user in the DB
@@ -459,7 +504,7 @@ func TestLogoutAll(t *testing.T) {
 	}
 }
 
-func TestRefresh(t *testing.T) {
+func TestHandlerRefresh(t *testing.T) {
 	testSetup(t)
 
 	_, credBytes, err := createAuth(t, nil)
@@ -523,52 +568,6 @@ func TestRefresh(t *testing.T) {
 		t.Errorf("status code: %d", resp.StatusCode)
 		return
 	}
-}
-
-func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
-	testSetup(t)
-
-	// handler does not require auth
-	testServerNoWrap := httptest.NewServer(http.HandlerFunc(handlerTest))
-	resp, _ := http.Get(testServerNoWrap.URL)
-	if resp.StatusCode != http.StatusNoContent {
-		t.Errorf("HandlerFuncAuthJWTWrapper method did not return proper status: %d", resp.StatusCode)
-		return
-	}
-	testServerNoWrap.Close()
-
-	// handler DOES require auth, but none provided.
-	testServerWrapped := httptest.NewServer(http.HandlerFunc(HandlerFuncAuthJWTWrapper(handlerTest)))
-	resp, _ = http.Get(testServerWrapped.URL)
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("HandlerFuncAuthJWTWrapper method did not return proper status: %d", resp.StatusCode)
-		return
-	}
-
-	// handler still requires auth, provide token.
-	_, credBytes, err := createAuth(t, nil)
-	if err != nil {
-		return
-	}
-	tokenBytes, _, err := login(t, credBytes)
-	if err != nil {
-		return
-	}
-	client := &http.Client{}
-	req, err := http.NewRequest(http.MethodDelete, testServerWrapped.URL, nil)
-	if err != nil {
-		t.Errorf("NewRequest error: %v", err)
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+string(tokenBytes))
-	resp, err = client.Do(req)
-	if err != nil || resp.StatusCode != http.StatusNoContent {
-		t.Errorf("HandlerFuncAuthJWTWrapper did not return proper status: %d", resp.StatusCode)
-		return
-	}
-
-	testServerWrapped.Close()
-
 }
 
 func TestRemoveExpiredTokens(t *testing.T) {
