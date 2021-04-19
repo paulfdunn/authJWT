@@ -1,6 +1,7 @@
 // Package authJWT implements JWT authentication.
-// This is a simple implementation, using a single authentication token with
-// an expiration.
+// This package is a GO (GOLANG) package that provides JWT authentication.
+// authJWT is hosted at https://github.com/paulfdunn/authJWT; please see the repo
+// for more information
 //
 // Callers will need to wrap their handlers using HandlerFuncAuthJWTWrapper;
 // see the test TestHandlerFuncAuthJWTWrapper for an example.
