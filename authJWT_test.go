@@ -303,7 +303,7 @@ func TestHandlerInfo(t *testing.T) {
 		t.Errorf("unmarshal error: %v", err)
 		return
 	}
-	fmt.Printf("%+v", info)
+	fmt.Printf("%+v\n", info)
 	if err != nil {
 		t.Errorf("POST error: %v", err)
 		return
@@ -345,14 +345,26 @@ func TestHandlerLogin(t *testing.T) {
 		}
 
 		// negative test - POST with no body.
-		resp, _ = http.Post(testServer.URL, "application/json", nil)
-		if resp.StatusCode != http.StatusUnprocessableEntity {
-			t.Errorf("Post with no body did not return proper status: %d", resp.StatusCode)
+		client := &http.Client{}
+		req, err := http.NewRequest(http.MethodPut, testServer.URL, nil)
+		if err != nil {
+			t.Errorf("NewRequest error: %v", err)
+			return
+		}
+		resp, err = client.Do(req)
+		if err != nil || resp.StatusCode != http.StatusUnprocessableEntity {
+			t.Errorf("error or Post with no body did not return proper status: %d", resp.StatusCode)
 			return
 		}
 
 		expectedExpireTime := time.Now().Add(config.JWTAuthTimeoutInterval).Unix()
-		resp, err = http.Post(testServer.URL, "application/json", bytes.NewBuffer(credBytes))
+		req, err = http.NewRequest(http.MethodPut, testServer.URL, bytes.NewBuffer(credBytes))
+		if err != nil {
+			t.Errorf("NewRequest error: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err = client.Do(req)
 		if err != nil {
 			t.Errorf("POST error: %v", err)
 			return
@@ -605,7 +617,7 @@ func TestRemoveExpiredTokens(t *testing.T) {
 			t.Errorf("kviToken.Get returned bytes and should not have")
 			return
 		} else {
-			fmt.Printf("TestRemoveExpiredTokens negative test passed")
+			fmt.Printf("TestRemoveExpiredTokens negative test passed\n")
 		}
 	}
 }
@@ -684,7 +696,13 @@ func login(t *testing.T, credBytes []byte) ([]byte, *CustomClaims, error) {
 	// login
 	testServerLogin := httptest.NewServer(http.HandlerFunc(handlerLogin))
 	defer testServerLogin.Close()
-	resp, err := http.Post(testServerLogin.URL, "application/json", bytes.NewBuffer(credBytes))
+	client := http.Client{}
+	req, err := http.NewRequest(http.MethodPut, testServerLogin.URL, bytes.NewBuffer(credBytes))
+	if err != nil {
+		t.Errorf("NewRequest error: %v", err)
+		return nil, nil, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Errorf("POST error: %v", err)
 		return nil, nil, err
