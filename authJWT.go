@@ -95,7 +95,7 @@ var (
 // Init initializes the package.
 // createRequiresAuth == true requires auth creates to be from an already authenticated
 // user. (Use for apps that require uses be added by an admin.)
-func Init(configIn Config) {
+func Init(configIn Config, mux *http.ServeMux) {
 	config = configIn
 
 	tokenKeyLoad(config.JWTKeyFilepath)
@@ -103,28 +103,28 @@ func Init(configIn Config) {
 	// Registering with the trailing slash means the naked path is redirected to this path.
 	crpath := config.PathCreate + "/"
 	if config.CreateRequiresAuth {
-		http.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreate))
+		mux.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreate))
 	} else {
-		http.HandleFunc(crpath, handlerCreate)
+		mux.HandleFunc(crpath, handlerCreate)
 	}
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", crpath)
 	dltpath := config.PathDelete + "/"
-	http.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
+	mux.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", dltpath)
 	infpath := config.PathInfo + "/"
-	http.HandleFunc(infpath, HandlerFuncAuthJWTWrapper(handlerInfo))
+	mux.HandleFunc(infpath, HandlerFuncAuthJWTWrapper(handlerInfo))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", infpath)
 	lipath := config.PathLogin + "/"
-	http.HandleFunc(lipath, handlerLogin)
+	mux.HandleFunc(lipath, handlerLogin)
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lipath)
 	lopath := config.PathLogout + "/"
-	http.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogout))
+	mux.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogout))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lopath)
 	loapath := config.PathLogoutAll + "/"
-	http.HandleFunc(loapath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
+	mux.HandleFunc(loapath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", loapath)
 	rfpath := config.PathRefresh + "/"
-	http.HandleFunc(rfpath, HandlerFuncAuthJWTWrapper(handlerRefresh))
+	mux.HandleFunc(rfpath, HandlerFuncAuthJWTWrapper(handlerRefresh))
 	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", rfpath)
 
 	initializeKVS(config.DataSourceName)
