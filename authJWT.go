@@ -26,11 +26,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
-	"github.com/paulfdunn/db/kvs"
-	"github.com/paulfdunn/logh"
-	"github.com/paulfdunn/osh/runtimeh"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/paulfdunn/go-helper/databaseh/kvs"
+	"github.com/paulfdunn/go-helper/logh"
+	"github.com/paulfdunn/go-helper/osh/runtimeh"
+
+	"github.com/dgrijalva/jwt-go"
 )
 
 type Config struct {

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
-	"github.com/paulfdunn/osh/runtimeh"
+	"github.com/paulfdunn/go-helper/osh/runtimeh"
 )
 
 var (

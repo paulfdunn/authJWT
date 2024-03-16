@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/paulfdunn/logh"
-	"github.com/paulfdunn/neth/httph"
+	"github.com/paulfdunn/go-helper/logh"
+	"github.com/paulfdunn/go-helper/neth/httph"
 )
 
 type ResponseStatus struct {

@@ -5,8 +5,8 @@ import (
 	"log"
 	"regexp"
 
-	"github.com/paulfdunn/db/kvs"
-	"github.com/paulfdunn/osh/runtimeh"
+	"github.com/paulfdunn/go-helper/databaseh/kvs"
+	"github.com/paulfdunn/go-helper/osh/runtimeh"
 )
 
 func initializeKVS(dataSourceName string) {
