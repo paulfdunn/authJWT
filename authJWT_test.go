@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -292,7 +292,7 @@ func TestHandlerInfo(t *testing.T) {
 		t.Errorf("client.Do error: %v", err)
 		return
 	}
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Errorf("reading body error: %v", err)
 		return
@@ -381,7 +381,7 @@ func TestHandlerLogin(t *testing.T) {
 			continue
 		}
 
-		tokenBytes, err := ioutil.ReadAll(resp.Body)
+		tokenBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
 			t.Errorf("ReadAll error: %v", err)
 		}
@@ -550,7 +550,7 @@ func TestHandlerRefresh(t *testing.T) {
 		return
 	}
 
-	tokenBytes, err := ioutil.ReadAll(resp.Body)
+	tokenBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Errorf("ReadAll error: %v", err)
 	}
@@ -711,7 +711,7 @@ func login(t *testing.T, credBytes []byte) ([]byte, *CustomClaims, error) {
 		t.Errorf("status code: %d", resp.StatusCode)
 		return nil, nil, err
 	}
-	tokenBytes, err := ioutil.ReadAll(resp.Body)
+	tokenBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Errorf("ReadAll error: %v", err)
 		return nil, nil, err
