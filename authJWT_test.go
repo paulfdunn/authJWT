@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
+	"github.com/paulfdunn/go-helper/logh"
 	"github.com/paulfdunn/go-helper/osh/runtimeh"
 )
 
@@ -25,10 +26,15 @@ func init() {
 	t := testing.T{}
 	testDir := t.TempDir()
 	dataSourceName = filepath.Join(testDir, "test.db")
+
+	// testSetup only to initialize config
+	testSetup()
+	// lp = logh.Map[config.LogName].Println
+	lpf = logh.Map[config.LogName].Printf
 }
 
 func TestAuthCreateGetDelete(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	em := "someone@somewhere.com"
 	ps := "P@ss1234"
@@ -66,9 +72,10 @@ func TestAuthCreateGetDelete(t *testing.T) {
 }
 
 func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
-	// handler does not require auth
+	// Test using handlerTest without wrapping in HandlerFuncAuthJWTWrapper.
+	// This server does not require auth.
 	testServerNoWrap := httptest.NewServer(http.HandlerFunc(handlerTest))
 	resp, _ := http.Get(testServerNoWrap.URL)
 	if resp.StatusCode != http.StatusNoContent {
@@ -77,7 +84,8 @@ func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
 	}
 	testServerNoWrap.Close()
 
-	// handler DOES require auth, but none provided.
+	// Test using handlerTest WITH wrapping in HandlerFuncAuthJWTWrapper.
+	// This server DOES require auth.
 	testServerWrapped := httptest.NewServer(http.HandlerFunc(HandlerFuncAuthJWTWrapper(handlerTest)))
 	resp, _ = http.Get(testServerWrapped.URL)
 	if resp.StatusCode != http.StatusUnauthorized {
@@ -85,7 +93,8 @@ func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
 		return
 	}
 
-	// handler still requires auth, provide token.
+	// Create auth, get a JWT token, and send a DELETE request; http.StatusNoContent
+	// means the request succeeded
 	_, credBytes, err := createAuth(t, nil)
 	if err != nil {
 		return
@@ -111,7 +120,7 @@ func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
 }
 
 func TestAuthTokenCreate(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	tokenString, err := authTokenStringCreate("testEmail")
 	if err != nil {
@@ -141,7 +150,7 @@ func TestAuthTokenCreate(t *testing.T) {
 }
 
 func TestHandlerCreate(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	testServer := httptest.NewServer(http.HandlerFunc(handlerCreate))
 	em := "newAuth@auth.com"
@@ -170,9 +179,9 @@ func TestHandlerCreate(t *testing.T) {
 		return
 	}
 
-	b, err = kviAuth.Get(em)
+	b, err = kvsAuth.Get(em)
 	if err != nil {
-		t.Errorf("Get kviAuth error: %v", err)
+		t.Errorf("Get kvsAuth error: %v", err)
 		return
 	}
 	// No error, auth was created.
@@ -191,7 +200,7 @@ func TestHandlerCreate(t *testing.T) {
 }
 
 func TestHandlerDelete(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	em, credBytes, err := createAuth(t, nil)
 	if err != nil {
@@ -240,16 +249,16 @@ func TestHandlerDelete(t *testing.T) {
 		return
 	}
 
-	b, err := kviAuth.Get(em)
+	b, err := kvsAuth.Get(em)
 	if err != nil || b != nil {
-		t.Error("Get kviAuth had no error, or returned bytes, and should not have")
+		t.Error("Get kvsAuth had no error, or returned bytes, and should not have")
 		return
 	}
 
 }
 
 func TestHandlerInfo(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	// Just put a random user in the DB
 	_, credBytes, err := createAuth(t, nil)
@@ -265,12 +274,12 @@ func TestHandlerInfo(t *testing.T) {
 	// Then add three tokens for the same user.
 	manyLogins := 3
 	userManyLogins := "many@login.com"
+	_, credBytes, err = createAuth(t, &userManyLogins)
+	if err != nil {
+		return
+	}
 	var tokenBytes []byte
 	for i := 0; i < manyLogins; i++ {
-		_, credBytes, err := createAuth(t, &userManyLogins)
-		if err != nil {
-			return
-		}
 
 		tokenBytes, _, err = login(t, credBytes)
 		if err != nil {
@@ -308,18 +317,18 @@ func TestHandlerInfo(t *testing.T) {
 		t.Errorf("POST error: %v", err)
 		return
 	}
-	if info.OutstandingTokens != 3 {
+	if info.OutstandingTokens != manyLogins {
 		t.Errorf("Wrong number of OutstandingTokens")
 	}
 }
 func TestHandlerLogin(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	// 0 - positive test, 1 - negative test; login with no auth created.
-	// create credentials, POST it, verify the returned body can be parsed to a token.
+	// create credentials, PUT it, verify the returned body can be parsed to a token.
 	for i := 0; i <= 1; i++ {
 
-		// For loop==1 get credentials but delete the auth.
+		// For i==1 get credentials but delete the auth.
 		tem := fmt.Sprintf("testLogin@auth.com.%d", i)
 		_, credBytes, err := createAuth(t, &tem)
 		if err != nil {
@@ -344,7 +353,7 @@ func TestHandlerLogin(t *testing.T) {
 			return
 		}
 
-		// negative test - POST with no body.
+		// negative test - Put with no body.
 		client := &http.Client{}
 		req, err := http.NewRequest(http.MethodPut, testServer.URL, nil)
 		if err != nil {
@@ -353,7 +362,7 @@ func TestHandlerLogin(t *testing.T) {
 		}
 		resp, err = client.Do(req)
 		if err != nil || resp.StatusCode != http.StatusUnprocessableEntity {
-			t.Errorf("error or Post with no body did not return proper status: %d", resp.StatusCode)
+			t.Errorf("error or Put with no body did not return proper status: %d", resp.StatusCode)
 			return
 		}
 
@@ -366,7 +375,7 @@ func TestHandlerLogin(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		resp, err = client.Do(req)
 		if err != nil {
-			t.Errorf("POST error: %v", err)
+			t.Errorf("PUT error: %v", err)
 			return
 		}
 		if i == 0 && resp.StatusCode != 200 {
@@ -398,7 +407,7 @@ func TestHandlerLogin(t *testing.T) {
 }
 
 func TestHandlerLogout(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	_, credBytes, err := createAuth(t, nil)
 	if err != nil {
@@ -410,7 +419,7 @@ func TestHandlerLogout(t *testing.T) {
 		return
 	}
 
-	// logout and verify token deleted from kviToken
+	// logout and verify token deleted from kvsToken
 	testServer := httptest.NewServer(http.HandlerFunc(HandlerFuncAuthJWTWrapper(handlerLogout)))
 	defer testServer.Close()
 	client := &http.Client{}
@@ -451,7 +460,7 @@ func TestHandlerLogout(t *testing.T) {
 		t.Errorf("Logout did not return proper status or was nil: %d", resp.StatusCode)
 		return
 	}
-	b, err := kviToken.Get(claims.tokenKVSKey())
+	b, err := kvsToken.Get(claims.tokenKVSKey())
 	if !(b == nil && err == nil) {
 		t.Error("TokenID not deleted.")
 		return
@@ -459,7 +468,7 @@ func TestHandlerLogout(t *testing.T) {
 }
 
 func TestHandlerLogoutAll(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	// Just put a random user in the DB
 	_, credBytes, err := createAuth(t, nil)
@@ -510,14 +519,14 @@ func TestHandlerLogoutAll(t *testing.T) {
 	// 	return
 	// }
 
-	k, err := kviToken.Keys()
+	k, err := kvsToken.Keys()
 	if len(k) != 1 || err != nil {
 		t.Errorf("There should still be one user token.")
 	}
 }
 
 func TestHandlerRefresh(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	_, credBytes, err := createAuth(t, nil)
 	if err != nil {
@@ -583,7 +592,7 @@ func TestHandlerRefresh(t *testing.T) {
 }
 
 func TestRemoveExpiredTokens(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	durations := []time.Duration{time.Duration(0), time.Duration(500) * time.Millisecond}
 	removeDuration := time.Duration(100) * time.Millisecond
@@ -604,17 +613,17 @@ func TestRemoveExpiredTokens(t *testing.T) {
 			t.Errorf("parseClaims error: %v", err)
 			return
 		}
-		b, err := kviToken.Get(claimsOut.tokenKVSKey())
+		b, err := kvsToken.Get(claimsOut.tokenKVSKey())
 		if b == nil || err != nil {
-			t.Errorf("kviToken.Get error: %v", err)
+			t.Errorf("kvsToken.Get error: %v", err)
 			return
 		}
 
 		removeExpiredTokens(removeDuration, removeDuration)
 		time.Sleep(removeDuration * 2)
-		b, _ = kviToken.Get(claimsOut.tokenKVSKey())
+		b, _ = kvsToken.Get(claimsOut.tokenKVSKey())
 		if b != nil && v < removeDuration {
-			t.Errorf("kviToken.Get returned bytes and should not have")
+			t.Errorf("kvsToken.Get returned bytes and should not have")
 			return
 		} else {
 			fmt.Printf("TestRemoveExpiredTokens negative test passed\n")
@@ -623,7 +632,7 @@ func TestRemoveExpiredTokens(t *testing.T) {
 }
 
 func TestValidateNegative(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	em := "someone@somewhere.com"
 	pws := []string{"  p@ss123", "  Pass123  ", " P@ssabc  "}
@@ -638,7 +647,7 @@ func TestValidateNegative(t *testing.T) {
 }
 
 func TestValidatePositive(t *testing.T) {
-	testSetup(t)
+	testSetup()
 
 	em := "someone@somewhere.com"
 	pws := []string{" P@ss1234 ", " p!Ss1234 ", " p#sS1234567890123456789012344456 "}
@@ -671,10 +680,11 @@ func TestUniqueID(t *testing.T) {
 // authDelete removes an ID/authentication pair from the KVS.
 // Returns the count, which is zero (and no error) if the id did not exist.
 func authDelete(id string) (int64, error) {
-	c, err := kviAuth.Delete(id)
+	c, err := kvsAuth.Delete(id)
 	return c, runtimeh.SourceInfoError("authDelete error", err)
 }
 
+// createAuth creates an entry in kvsAuth
 func createAuth(t *testing.T, email *string) (string, []byte, error) {
 	// create auth (user)
 	em := "someone@auth.com"
@@ -692,6 +702,7 @@ func createAuth(t *testing.T, email *string) (string, []byte, error) {
 	return em, b, nil
 }
 
+// login using the provided credentials and return a token and claims.
 func login(t *testing.T, credBytes []byte) ([]byte, *CustomClaims, error) {
 	// login
 	testServerLogin := httptest.NewServer(http.HandlerFunc(handlerLogin))
@@ -732,7 +743,7 @@ func handlerTest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func testSetup(t *testing.T) {
+func testSetup() {
 	os.Remove(dataSourceName)
 
 	// Can't use Init directly, as config is not Init'd, and many config parameters
@@ -745,5 +756,6 @@ func testSetup(t *testing.T) {
 }
 
 func initializeConfig() {
-	config = Config{AppName: "auth", AuditLogName: "auth.audit", LogName: "auth", JWTAuthTimeoutInterval: time.Minute * 15}
+	config = Config{AppName: "auth", AuditLogName: "auth.audit", LogName: "auth",
+		JWTAuthTimeoutInterval: time.Minute * 15}
 }

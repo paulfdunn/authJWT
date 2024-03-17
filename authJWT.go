@@ -1,13 +1,10 @@
 // Package authJWT implements JWT authentication.
-// This package is a GO (GOLANG) package that provides JWT authentication.
-// authJWT is hosted at https://github.com/paulfdunn/authJWT; please see the repo
-// for more information
 //
 // Callers will need to wrap their handlers using HandlerFuncAuthJWTWrapper;
 // see the test TestHandlerFuncAuthJWTWrapper for an example.
 // The provided wrappers log all DELETE/POST/PUT calls to logh.Map[*cnfg.AuditLogName].
-// Tokens are stored locally to allow invalidating the token for logout, or
-// all tokens for the user.
+// Tokens are stored locally to allow invalidating a token for logout, or
+// invalidating all tokens for a user.
 //
 // Use only HTTPS to prevent tokens being stolen in-flight; I.E. public wi-fi.
 // Callers should not store the tokens. Use the token for the session only; the user
@@ -84,11 +81,16 @@ const (
 )
 
 var (
-	config  Config
-	kviAuth kvs.KVS
-	// The token KVS stores the key, encoded as Email|TokenID, and the experation in
-	// Unix (seconds) time.
-	kviToken           kvs.KVS
+	config Config
+
+	// lp     func(level logh.LoghLevel, v ...interface{})
+	lpf func(level logh.LoghLevel, format string, v ...interface{})
+
+	// The auth KVS stores authentications; one per Email.
+	kvsAuth kvs.KVS
+	// The token KVS stores the key (encoded as Email|TokenID) and the value is the
+	// experation in Unix (seconds) time. A user may have more than one valid token.
+	kvsToken           kvs.KVS
 	passwordValidation []*regexp.Regexp
 
 	tokenKey []byte
@@ -109,25 +111,29 @@ func Init(configIn Config, mux *http.ServeMux) {
 	} else {
 		mux.HandleFunc(crpath, handlerCreate)
 	}
-	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", crpath)
+
+	// lp = logh.Map[config.LogName].Println
+	lpf = logh.Map[config.LogName].Printf
+
+	lpf(logh.Info, "Registered handler: %s\n", crpath)
 	dltpath := config.PathDelete + "/"
 	mux.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
-	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", dltpath)
+	lpf(logh.Info, "Registered handler: %s\n", dltpath)
 	infpath := config.PathInfo + "/"
 	mux.HandleFunc(infpath, HandlerFuncAuthJWTWrapper(handlerInfo))
-	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", infpath)
+	lpf(logh.Info, "Registered handler: %s\n", infpath)
 	lipath := config.PathLogin + "/"
 	mux.HandleFunc(lipath, handlerLogin)
-	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lipath)
+	lpf(logh.Info, "Registered handler: %s\n", lipath)
 	lopath := config.PathLogout + "/"
 	mux.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogout))
-	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", lopath)
+	lpf(logh.Info, "Registered handler: %s\n", lopath)
 	loapath := config.PathLogoutAll + "/"
 	mux.HandleFunc(loapath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
-	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", loapath)
+	lpf(logh.Info, "Registered handler: %s\n", loapath)
 	rfpath := config.PathRefresh + "/"
 	mux.HandleFunc(rfpath, HandlerFuncAuthJWTWrapper(handlerRefresh))
-	logh.Map[config.LogName].Printf(logh.Info, "Registered handler: %s\n", rfpath)
+	lpf(logh.Info, "Registered handler: %s\n", rfpath)
 
 	initializeKVS(config.DataSourceName)
 
@@ -136,8 +142,8 @@ func Init(configIn Config, mux *http.ServeMux) {
 	removeExpiredTokens(config.JWTAuthRemoveInterval, config.JWTAuthTimeoutInterval)
 }
 
-// AuthCreate adds an ID/authentication pair to the KVS. Public to allow apps to
-// create auths directly, without going through the ReST API.
+// AuthCreate creates or updates an ID/authentication pair to kvsAuth. The scope of the function
+// is public to allow apps to create auths directly, without going through the ReST API.
 func (cred *Credential) AuthCreate() error {
 	var err error
 	var ph []byte
@@ -149,10 +155,11 @@ func (cred *Credential) AuthCreate() error {
 	}
 
 	auth := authentication{Email: cred.Email, PasswordHash: ph}
-	return authUpdate(auth)
+	return authCreate(auth)
 }
 
-// Authenticated checks the request for a valid token
+// Authenticated checks the request for a valid token and will return
+// the users CustomClaims.
 func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error) {
 	tokenString, err := tokenFromRequestHeader(r)
 	if err != nil {
@@ -164,7 +171,7 @@ func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error
 		w.WriteHeader(http.StatusUnauthorized)
 		return nil, err
 	}
-	b, err := kviToken.Get(claims.tokenKVSKey())
+	b, err := kvsToken.Get(claims.tokenKVSKey())
 	if b == nil || err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		return nil, fmt.Errorf("%s token not valid", runtimeh.SourceInfo())
@@ -172,6 +179,7 @@ func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error
 	return claims, nil
 }
 
+// tokenKVSKey creates a key for kvsToken using the Email and TokenID.
 func (cc CustomClaims) tokenKVSKey() string {
 	return cc.Email + "|" + cc.TokenID
 }
@@ -194,21 +202,27 @@ func (cred *Credential) validate() error {
 	return nil
 }
 
+// authGet returns the authentication for the provided id. If the id is not in kvsAuth,
+// there is no error, but the returned authentication object is empty.
 func authGet(id string) (authentication, error) {
 	auth := authentication{}
-	if err := kviAuth.Deserialize(id, &auth); err != nil {
+	if err := kvsAuth.Deserialize(id, &auth); err != nil {
 		return authentication{}, runtimeh.SourceInfoError("authGet error", err)
 	}
 	return auth, nil
 }
 
-func authUpdate(auth authentication) error {
-	if err := kviAuth.Serialize(*auth.Email, auth); err != nil {
+// authCreate sets an authentication in kvsAuth and will overwrite any existing
+// value.
+func authCreate(auth authentication) error {
+	if err := kvsAuth.Serialize(*auth.Email, auth); err != nil {
 		return runtimeh.SourceInfoError("serialize error", err)
 	}
 	return nil
 }
 
+// authTokenStringCreate stores a token in kvsToken, where the key is
+// generated using tokenKVSKey() and the value is the claims.ExpiresAt.
 func authTokenStringCreate(email string) (string, error) {
 	tokenID, err := uniqueID(true)
 	if err != nil {
@@ -229,10 +243,12 @@ func authTokenStringCreate(email string) (string, error) {
 	if err != nil {
 		runtimeh.SourceInfoError("binary.Write failed", err)
 	}
-	kviToken.Set(claims.tokenKVSKey(), buf.Bytes())
+	kvsToken.Set(claims.tokenKVSKey(), buf.Bytes())
 	return token.SignedString(tokenKey)
 }
 
+// parseClaims parses a JWT token string (from the Authorization header)
+// into a CustomClaims object.
 func parseClaims(tokenString string) (*CustomClaims, error) {
 	claimsIn := &CustomClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claimsIn,
@@ -250,6 +266,7 @@ func parseClaims(tokenString string) (*CustomClaims, error) {
 	return claimsOut, nil
 }
 
+// passwordHash hashes a password using bcrypt.
 func passwordHash(pasword string) (hash []byte, err error) {
 	if hash, err = bcrypt.GenerateFromPassword([]byte(pasword), bcrypt.DefaultCost); err != nil {
 		return nil, runtimeh.SourceInfoError("could not hash password, error: %+v", err)
@@ -257,18 +274,23 @@ func passwordHash(pasword string) (hash []byte, err error) {
 	return hash, nil
 }
 
+// passwordVerifyHash verifies that the provided password hashes to the provided hash,
+// or returns an error if they do not match.
 func passwordVerifyHash(password string, hash []byte) error {
 	return bcrypt.CompareHashAndPassword(hash, []byte(password))
 }
 
+// removeExpiredTokens is a go routine that continuously runs in the background
+// and will remove tokens from kvsToken if expiresAt is more than expireInterval
+// old.
 func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
 	go func() {
-		keys, err := kviToken.Keys()
+		keys, err := kvsToken.Keys()
 		if err == nil {
 			for i := range keys {
-				b, err := kviToken.Get(keys[i])
+				b, err := kvsToken.Get(keys[i])
 				if err != nil {
-					logh.Map[config.LogName].Printf(logh.Error, "getting token: %v\n", err)
+					lpf(logh.Error, "getting token: %v\n", err)
 					continue
 				}
 
@@ -276,26 +298,27 @@ func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
 				var expiresAt int64
 				err = binary.Read(buf, binary.LittleEndian, &expiresAt)
 				if err != nil {
-					logh.Map[config.LogName].Printf(logh.Error, "reading expiresAt: %v\n", err)
+					lpf(logh.Error, "reading expiresAt: %v\n", err)
 					continue
 				}
 				if time.Since(time.Unix(expiresAt, 0)) > expireInterval {
-					_, err := kviToken.Delete(keys[i])
+					_, err := kvsToken.Delete(keys[i])
 					if err != nil {
-						logh.Map[config.LogName].Printf(logh.Error, "deleting expired token: %v\n", err)
+						lpf(logh.Error, "deleting expired token: %v\n", err)
 						continue
 					}
 				}
 
 			}
 		} else {
-			logh.Map[config.LogName].Printf(logh.Error, "getting keys: %v\n", err)
+			lpf(logh.Error, "getting keys: %v\n", err)
 		}
 
 		time.Sleep(rate)
 	}()
 }
 
+// tokenFromRequestHeader returns the data in the Authorization header.
 func tokenFromRequestHeader(r *http.Request) (string, error) {
 	var tokenHeader []string
 	var ok bool
@@ -307,7 +330,7 @@ func tokenFromRequestHeader(r *http.Request) (string, error) {
 }
 
 // uniqueID is used to generate 16 byte (32 character) ID's; as a UUID (includeHuphens) or
-// hex string. Note these are hex strings; they do not include all alphanumeric characters.
+// hex string. The return value is a hex string formatted in ASCII.
 // 16 bytes = 128 bits, 2^128 = 3.4028237e+38
 func uniqueID(includeHyphens bool) (id string, err error) {
 	idBin := make([]byte, 16)
@@ -325,24 +348,27 @@ func uniqueID(includeHyphens bool) (id string, err error) {
 	return fmt.Sprintf("%x", idBin[:]), err
 }
 
+// userTokens gets a count of tokens in kvsToken for the specified email. If
+// remove == true, all tokens are removed and the count is the number of removed
+// tokens.
 func userTokens(email string, remove bool) (int, error) {
-	keys, err := kviToken.Keys()
+	keys, err := kvsToken.Keys()
 	if err != nil {
-		logh.Map[config.LogName].Printf(logh.Error, "getting keys: %v\n", err)
+		lpf(logh.Error, "getting keys: %v\n", err)
 		return 0, err
 	}
 
 	count := 0
 	for i := range keys {
-		_, err := kviToken.Get(keys[i])
+		_, err := kvsToken.Get(keys[i])
 		if err != nil {
-			logh.Map[config.LogName].Printf(logh.Error, "getting token: %v\n", err)
+			lpf(logh.Error, "getting token: %v\n", err)
 			return count, err
 		}
 
 		if strings.HasPrefix(keys[i], email) {
 			if remove {
-				kviToken.Delete(keys[i])
+				kvsToken.Delete(keys[i])
 			}
 			count++
 		}

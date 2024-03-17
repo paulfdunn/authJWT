@@ -1,6 +1,5 @@
 // Package authJWT implements JWT authentication.
-// This is a simple implementation, using a single authentication token with
-// an expiration.
+
 package authJWT
 
 import (
@@ -52,6 +51,8 @@ func HandlerFuncAuthJWTWrapper(hf func(w http.ResponseWriter, r *http.Request)) 
 	}
 }
 
+// handlerCreate is the handler to create an auth (entry in kvsAuth). The handler
+// will error if there is already an auth for the specified Email.
 func handlerCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -62,7 +63,7 @@ func handlerCreate(w http.ResponseWriter, r *http.Request) {
 	pw := ""
 	cred := Credential{Email: &em, Password: &pw}
 	if err := httph.BodyUnmarshal(w, r, &cred); err != nil {
-		logh.Map[config.LogName].Printf(logh.Error, "create error:%v", err)
+		lpf(logh.Error, "create error:%v", err)
 		// WriteHeader provided by BodyUnmarshal
 		return
 	}
@@ -87,6 +88,8 @@ func handlerCreate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 }
 
+// handlerDelete deletes the entries in kvsAuth and kvsToken for
+// the specified Email.
 func handlerDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -98,11 +101,15 @@ func handlerDelete(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	kviAuth.Delete(claims.Email)
-	kviToken.Delete(claims.tokenKVSKey())
+
+	// Remove all users tokens then delete the kvsAuth
+	handlerLogoutCommon(w, r, true)
+	kvsAuth.Delete(claims.Email)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handlerInfo will return an Info object for the caller.
 func handlerInfo(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -116,14 +123,14 @@ func handlerInfo(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := userTokens(claims.Email, false)
 	if err != nil {
-		logh.Map[config.LogName].Printf(logh.Error, "userTokens error:%v", err)
+		lpf(logh.Error, "userTokens error:%v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	info := Info{OutstandingTokens: c}
 	b, err := json.Marshal(info)
 	if err != nil {
-		logh.Map[config.LogName].Printf(logh.Error, "json.Marshal error:%v", err)
+		lpf(logh.Error, "json.Marshal error:%v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -131,6 +138,8 @@ func handlerInfo(w http.ResponseWriter, r *http.Request) {
 	w.Write(b)
 }
 
+// handlerLogin will validate a callers credentials and, if the credentials are
+// valid, will return a JWT token for the caller.
 func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -144,14 +153,14 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	pw := ""
 	cred := Credential{Email: &em, Password: &pw}
 	if err := httph.BodyUnmarshal(w, r, &cred); err != nil {
-		logh.Map[config.LogName].Printf(logh.Error, "login error:%v", err)
+		lpf(logh.Error, "login error:%v", err)
 		// WriteHeader provided by BodyUnmarshal
 		return
 	}
 
 	auth, err := authGet(*cred.Email)
 	if err != nil {
-		logh.Map[config.LogName].Printf(logh.Error, "authGet error:%v", err)
+		lpf(logh.Error, "authGet error:%v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -163,7 +172,7 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 
 	tokenString, err := authTokenStringCreate(*cred.Email)
 	if err != nil {
-		logh.Map[config.LogName].Printf(logh.Error, "authTokenStringCreate error:%v", err)
+		lpf(logh.Error, "authTokenStringCreate error:%v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -172,10 +181,15 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(tokenString))
 }
 
+// handlerLogout will delete the token the caller is currently using,
+// effectively logging them out as the token is no longer valid.
 func handlerLogout(w http.ResponseWriter, r *http.Request) {
 	handlerLogoutCommon(w, r, false)
 }
 
+// handlerLogoutAll will delete all tokens for the current caller,
+// effectively logging them out of all sessions, as none of their issued
+// tokens will be valid.
 func handlerLogoutAll(w http.ResponseWriter, r *http.Request) {
 	handlerLogoutCommon(w, r, true)
 }
@@ -194,16 +208,18 @@ func handlerLogoutCommon(w http.ResponseWriter, r *http.Request, logoutAll bool)
 	if logoutAll {
 		_, err := userTokens(claims.Email, true)
 		if err != nil {
-			logh.Map[config.LogName].Printf(logh.Error, "userTokens error:%v", err)
+			lpf(logh.Error, "userTokens error:%v", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 	} else {
-		kviToken.Delete(claims.tokenKVSKey())
+		kvsToken.Delete(claims.tokenKVSKey())
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handlerRefresh deletes the callers current token and returns
+// a new token.
 func handlerRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -221,12 +237,12 @@ func handlerRefresh(w http.ResponseWriter, r *http.Request) {
 
 	tokenString, err := authTokenStringCreate(claims.Email)
 	if err != nil {
-		logh.Map[config.LogName].Printf(logh.Error, "authTokenStringCreate error:%v", err)
+		lpf(logh.Error, "authTokenStringCreate error:%v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	kviToken.Delete(claims.tokenKVSKey())
+	kvsToken.Delete(claims.tokenKVSKey())
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(tokenString))
 }
