@@ -19,13 +19,13 @@ import (
 )
 
 var (
-	dataSourceName string
+	dataSourcePath string
 )
 
 func init() {
 	t := testing.T{}
 	testDir := t.TempDir()
-	dataSourceName = filepath.Join(testDir, "test.db")
+	dataSourcePath = filepath.Join(testDir, "test.db")
 
 	// testSetup only to initialize config
 	testSetup()
@@ -313,10 +313,6 @@ func TestHandlerInfo(t *testing.T) {
 		return
 	}
 	fmt.Printf("%+v\n", info)
-	if err != nil {
-		t.Errorf("POST error: %v", err)
-		return
-	}
 	if info.OutstandingTokens != manyLogins {
 		t.Errorf("Wrong number of OutstandingTokens")
 	}
@@ -366,7 +362,7 @@ func TestHandlerLogin(t *testing.T) {
 			return
 		}
 
-		expectedExpireTime := time.Now().Add(config.JWTAuthTimeoutInterval).Unix()
+		expectedExpireTime := time.Now().Add(config.JWTAuthExpirationInterval).Unix()
 		req, err = http.NewRequest(http.MethodPut, testServer.URL, bytes.NewBuffer(credBytes))
 		if err != nil {
 			t.Errorf("NewRequest error: %v", err)
@@ -456,7 +452,7 @@ func TestHandlerLogout(t *testing.T) {
 	if err != nil || resp.StatusCode != http.StatusNoContent {
 		t.Errorf("Logout did not return proper status: %d", resp.StatusCode)
 		return
-	} else if resp == nil || (resp != nil && resp.StatusCode != http.StatusNoContent) {
+	} else if resp == nil || resp.StatusCode != http.StatusNoContent {
 		t.Errorf("Logout did not return proper status or was nil: %d", resp.StatusCode)
 		return
 	}
@@ -542,7 +538,7 @@ func TestHandlerRefresh(t *testing.T) {
 	defer testServer.Close()
 	client := &http.Client{}
 
-	expectedExpireTime := time.Now().Add(config.JWTAuthTimeoutInterval).Unix()
+	expectedExpireTime := time.Now().Add(config.JWTAuthExpirationInterval).Unix()
 	req, err := http.NewRequest(http.MethodPost, testServer.URL, nil)
 	if err != nil {
 		t.Errorf("NewRequest error: %v", err)
@@ -595,9 +591,9 @@ func TestRemoveExpiredTokens(t *testing.T) {
 	testSetup()
 
 	durations := []time.Duration{time.Duration(0), time.Duration(500) * time.Millisecond}
-	removeDuration := time.Duration(100) * time.Millisecond
+	removeDuration := time.Duration(0) * time.Millisecond
 	for _, v := range durations {
-		config.JWTAuthTimeoutInterval = v
+		config.JWTAuthExpirationInterval = v
 		_, credBytes, err := createAuth(t, nil)
 		if err != nil {
 			return
@@ -744,18 +740,10 @@ func handlerTest(w http.ResponseWriter, r *http.Request) {
 }
 
 func testSetup() {
-	os.Remove(dataSourceName)
+	os.Remove(dataSourcePath)
 
-	// Can't use Init directly, as config is not Init'd, and many config parameters
-	// are app dependent.
-	// Init("testingApp", "", "", dataSourceName)
-	initializeConfig()
-	config.DataSourceName = dataSourceName
-	initializeKVS(dataSourceName)
-	passwordValidationLoad()
-}
-
-func initializeConfig() {
 	config = Config{AppName: "auth", AuditLogName: "auth.audit", LogName: "auth",
-		JWTAuthTimeoutInterval: time.Minute * 15}
+		JWTAuthExpirationInterval: time.Minute * 15}
+	config.DataSourcePath = dataSourcePath
+	Init(config, nil)
 }

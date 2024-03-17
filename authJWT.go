@@ -1,16 +1,4 @@
 // Package authJWT implements JWT authentication.
-//
-// Callers will need to wrap their handlers using HandlerFuncAuthJWTWrapper;
-// see the test TestHandlerFuncAuthJWTWrapper for an example.
-// The provided wrappers log all DELETE/POST/PUT calls to logh.Map[*cnfg.AuditLogName].
-// Tokens are stored locally to allow invalidating a token for logout, or
-// invalidating all tokens for a user.
-//
-// Use only HTTPS to prevent tokens being stolen in-flight; I.E. public wi-fi.
-// Callers should not store the tokens. Use the token for the session only; the user
-// can save their credentials via their browser, if they chose, to make logging
-// in easier. Do also allow your users access to logout-all, as well as to the
-// number of tokens available for their ID.
 package authJWT
 
 import (
@@ -33,22 +21,76 @@ import (
 )
 
 type Config struct {
-	AppName                string
-	AuditLogName           string
-	DataSourceName         string
-	CreateRequiresAuth     bool
-	JWTAuthRemoveInterval  time.Duration
-	JWTAuthTimeoutInterval time.Duration
-	JWTKeyFilepath         string
-	LogName                string
-	PasswordValidation     []string
-	PathCreate             string
-	PathDelete             string
-	PathInfo               string
-	PathLogin              string
-	PathLogout             string
-	PathLogoutAll          string
-	PathRefresh            string
+	// AppName is used to populate the Issuer field of the Claims.
+	AppName string
+	// AuditLogName is the name of the logh logger for the audit log. Callers
+	// must create their own logh loggers or output will go to STDOUT.
+	AuditLogName string
+	// DataSourcePath is the path to the SQLITE database used to persist auth and tokens.
+	DataSourcePath string
+	// CreateRequiresAuth - when true, requires an already authorized caller to create new
+	// credentials. When false any caller can create their own auth.
+	CreateRequiresAuth bool
+	// JWTAuthRemoveInterval is the interval at which a GO routine runs, checks for expired
+	// tokens, and invalidates all expired tokens. (A user can login from multiple devices
+	// and can have more than one outstanding token.)
+	JWTAuthRemoveInterval time.Duration
+	// JWTAuthExpirationInterval is the duration for which a token is valid.
+	JWTAuthExpirationInterval time.Duration
+	// JWTKeyPath is the path to the private key used for signing the tokens.
+	JWTKeyPath string
+	// LogName is the name of the logh logger for general logging. Callers
+	// must create their own logh loggers or output will go to STDOUT.
+	LogName string
+	// PasswordValidation is a slice of REGEX used for password validation. If nothing is
+	// provided, defaultPasswordValidation is used.
+	PasswordValidation []string
+	// PathCreate is the final portion of the URL path for create. If empty the
+	// default is used: /auth/create
+	// Valid HTTP methods: http.MethodPost
+	PathCreate string
+	// PathDelete is the final portion of the URL path for delete. If empty the
+	// default is used: /auth/delete
+	// Valid HTTP methods: http.MethodDelete
+	PathDelete string
+	// PathInfo is the final portion of the URL path for info. If empty the
+	// default is used: /auth/info
+	// Valid HTTP methods: http.MethodGet
+	PathInfo string
+	// PathLogin is the final portion of the URL path for login. If empty the
+	// default is used: /auth/login
+	// Valid HTTP methods: http.MethodPut
+	PathLogin string
+	// PathLogout is the final portion of the URL path for logout. If empty the
+	// default is used: /auth/logout
+	// Valid HTTP methods: http.MethodDelete
+	PathLogout string
+	// PathLogoutAll is the final portion of the URL path for logout-all. If empty the
+	// default is used: /auth/logout-all
+	// Valid HTTP methods: http.MethodDelete
+	PathLogoutAll string
+	// PathRefresh is the final portion of the URL path for refresh. If empty the
+	// default is used: /auth/refresh
+	// Valid HTTP methods: http.MethodPost
+	PathRefresh string
+}
+
+// Credential is what is supplied by the HTTP request in order to authenticate.
+type Credential struct {
+	Email    *string
+	Password *string
+}
+
+// CustomClaims are the Claims for the JWT token.
+type CustomClaims struct {
+	jwt.StandardClaims
+	Email   string
+	TokenID string
+}
+
+// Info is used to provide information back to the user.
+type Info struct {
+	OutstandingTokens int
 }
 
 // authentication is persisted data about a user and their authorization.
@@ -59,29 +101,17 @@ type authentication struct {
 	Role           *string  `json:",omitempty"`
 }
 
-// Credential is what is supplied by the HTTP request in order to authenticate.
-type Credential struct {
-	Email    *string
-	Password *string
-}
-
-type CustomClaims struct {
-	jwt.StandardClaims
-	Email   string
-	TokenID string
-}
-
-type Info struct {
-	OutstandingTokens int
-}
-
 const (
 	authJWTAuthKVS = "authJWTAuth"
 	authTokenKVS   = "authJWTToken"
 )
 
 var (
+	// config used by this package.
 	config Config
+
+	// default password validation: 8-32 characters, 1 lower case, 1 upper case, 1 special, 1 number.
+	defaultPasswordValidation = []string{`^[\S]{8,32}$`, `[a-z]`, `[A-Z]`, `[!#$%'()*+,-.\\/:;=?@\[\]^_{|}~]`, `[0-9]`}
 
 	// lp     func(level logh.LoghLevel, v ...interface{})
 	lpf func(level logh.LoghLevel, format string, v ...interface{})
@@ -98,48 +128,74 @@ var (
 
 // Init initializes the package.
 // createRequiresAuth == true requires auth creates to be from an already authenticated
-// user. (Use for apps that require uses be added by an admin.)
+// user. (Use for apps that require users be added by an admin.)
 func Init(configIn Config, mux *http.ServeMux) {
 	config = configIn
-
-	tokenKeyLoad(config.JWTKeyFilepath)
-
-	// Registering with the trailing slash means the naked path is redirected to this path.
-	crpath := config.PathCreate + "/"
-	if config.CreateRequiresAuth {
-		mux.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreate))
-	} else {
-		mux.HandleFunc(crpath, handlerCreate)
-	}
 
 	// lp = logh.Map[config.LogName].Println
 	lpf = logh.Map[config.LogName].Printf
 
-	lpf(logh.Info, "Registered handler: %s\n", crpath)
-	dltpath := config.PathDelete + "/"
-	mux.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
-	lpf(logh.Info, "Registered handler: %s\n", dltpath)
-	infpath := config.PathInfo + "/"
-	mux.HandleFunc(infpath, HandlerFuncAuthJWTWrapper(handlerInfo))
-	lpf(logh.Info, "Registered handler: %s\n", infpath)
-	lipath := config.PathLogin + "/"
-	mux.HandleFunc(lipath, handlerLogin)
-	lpf(logh.Info, "Registered handler: %s\n", lipath)
-	lopath := config.PathLogout + "/"
-	mux.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogout))
-	lpf(logh.Info, "Registered handler: %s\n", lopath)
-	loapath := config.PathLogoutAll + "/"
-	mux.HandleFunc(loapath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
-	lpf(logh.Info, "Registered handler: %s\n", loapath)
-	rfpath := config.PathRefresh + "/"
-	mux.HandleFunc(rfpath, HandlerFuncAuthJWTWrapper(handlerRefresh))
-	lpf(logh.Info, "Registered handler: %s\n", rfpath)
+	if config.JWTKeyPath == "" {
+		lpf(logh.Error, "JWTKeyPath is nil - only valid for testing purposes.")
+	} else {
+		tokenKeyLoad(config.JWTKeyPath)
+	}
 
-	initializeKVS(config.DataSourceName)
+	// Applicaitons must provide a mux or register the handlers themselves.
+	// For testing purposes, no mux is required.
+	if mux != nil {
+		// Registering with the trailing slash means the naked path is redirected to this path.
+		crpath := config.PathCreate + "/"
+		if config.CreateRequiresAuth {
+			mux.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreate))
+		} else {
+			mux.HandleFunc(crpath, handlerCreate)
+		}
 
+		// Set default auth paths where none was provided by the caller.
+		if config.PathDelete == "" {
+			config.PathDelete = "/auth/delete"
+		}
+		if config.PathInfo == "" {
+			config.PathInfo = "/auth/info"
+		}
+		if config.PathLogin == "" {
+			config.PathLogin = "/auth/login"
+		}
+		if config.PathLogout == "" {
+			config.PathLogout = "/auth/logout"
+		}
+		if config.PathLogoutAll == "" {
+			config.PathLogoutAll = "/auth/logout-all"
+		}
+		if config.PathRefresh == "" {
+			config.PathRefresh = "/auth/refresh"
+		}
+
+		lpf(logh.Info, "Registered handler: %s\n", crpath)
+		dltpath := config.PathDelete + "/"
+		mux.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
+		lpf(logh.Info, "Registered handler: %s\n", dltpath)
+		infpath := config.PathInfo + "/"
+		mux.HandleFunc(infpath, HandlerFuncAuthJWTWrapper(handlerInfo))
+		lpf(logh.Info, "Registered handler: %s\n", infpath)
+		lipath := config.PathLogin + "/"
+		mux.HandleFunc(lipath, handlerLogin)
+		lpf(logh.Info, "Registered handler: %s\n", lipath)
+		lopath := config.PathLogout + "/"
+		mux.HandleFunc(lopath, HandlerFuncAuthJWTWrapper(handlerLogout))
+		lpf(logh.Info, "Registered handler: %s\n", lopath)
+		loapath := config.PathLogoutAll + "/"
+		mux.HandleFunc(loapath, HandlerFuncAuthJWTWrapper(handlerLogoutAll))
+		lpf(logh.Info, "Registered handler: %s\n", loapath)
+		rfpath := config.PathRefresh + "/"
+		mux.HandleFunc(rfpath, HandlerFuncAuthJWTWrapper(handlerRefresh))
+		lpf(logh.Info, "Registered handler: %s\n", rfpath)
+	}
+
+	initializeKVS(config.DataSourcePath)
 	passwordValidationLoad()
-
-	removeExpiredTokens(config.JWTAuthRemoveInterval, config.JWTAuthTimeoutInterval)
+	removeExpiredTokens(config.JWTAuthRemoveInterval, config.JWTAuthExpirationInterval)
 }
 
 // AuthCreate creates or updates an ID/authentication pair to kvsAuth. The scope of the function
@@ -230,7 +286,7 @@ func authTokenStringCreate(email string) (string, error) {
 	}
 	claims := CustomClaims{
 		jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(config.JWTAuthTimeoutInterval).Unix(),
+			ExpiresAt: time.Now().Add(config.JWTAuthExpirationInterval).Unix(),
 			Issuer:    config.AppName,
 		},
 		email,
@@ -283,6 +339,7 @@ func passwordVerifyHash(password string, hash []byte) error {
 // removeExpiredTokens is a go routine that continuously runs in the background
 // and will remove tokens from kvsToken if expiresAt is more than expireInterval
 // old.
+// Calling with rate == 0 causes the go routine to return after running once.
 func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
 	go func() {
 		keys, err := kvsToken.Keys()
@@ -312,6 +369,10 @@ func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
 			}
 		} else {
 			lpf(logh.Error, "getting keys: %v\n", err)
+		}
+
+		if rate == 0 {
+			return
 		}
 
 		time.Sleep(rate)

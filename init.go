@@ -11,22 +11,21 @@ import (
 
 // initializeKVS initializes KVS kvsAuth and kvsToken; these are the key
 // value stores (KVS) for authentication and tokens.
-func initializeKVS(dataSourceName string) {
+func initializeKVS(dataSourcePath string) {
 	var err error
 	// The KVS table name and key will both use authJWTAuthKVS.
-	if kvsAuth, err = kvs.New(dataSourceName, authJWTAuthKVS); err != nil {
+	if kvsAuth, err = kvs.New(dataSourcePath, authJWTAuthKVS); err != nil {
 		log.Fatalf("fatal: %s fatal: could not create New kvs, error: %v", runtimeh.SourceInfo(), err)
 	}
 
-	if kvsToken, err = kvs.New(dataSourceName, authTokenKVS); err != nil {
+	if kvsToken, err = kvs.New(dataSourcePath, authTokenKVS); err != nil {
 		log.Fatalf("fatal: %s fatal: could not create New kvs, error: %v", runtimeh.SourceInfo(), err)
 	}
 }
 
 // passwordValidationLoad loads the default password validation rules.
 func passwordValidationLoad() error {
-	// default password validation: 8-32 characters, 1 lower case, 1 upper case, 1 special, 1 number.
-	pwv := []string{`^[\S]{8,32}$`, `[a-z]`, `[A-Z]`, `[!#$%'()*+,-.\\/:;=?@\[\]^_{|}~]`, `[0-9]`}
+	pwv := defaultPasswordValidation
 	if config.PasswordValidation != nil {
 		pwv = config.PasswordValidation
 	}
