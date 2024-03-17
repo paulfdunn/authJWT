@@ -17,4 +17,6 @@ Use only HTTPS to prevent tokens being stolen in-flight; I.E. public wi-fi. Call
 ## Usage
 Applications only need call Init with a Config object, and optional http.ServeMux. If a mux is provided, the paths in the config object are wrapped in the authJWT handlers and registerd. If no mux is provided in the Init call, applications must wrap their handlers using HandlerFuncAuthJWTWrapper.
 
+Once initialized, authJWT handlers will respond to the specified paths to let callers: create/delete their authentication, login/logout (logout from the calling device)/logout-all (logout of any device), refresh (extend the time a token is valid), or get information about their authentication.
+
 For detailed usage and an example application, see github.com/paulfdunn/rest-app.
