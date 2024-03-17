@@ -144,15 +144,10 @@ func Init(configIn Config, mux *http.ServeMux) {
 	// Applicaitons must provide a mux or register the handlers themselves.
 	// For testing purposes, no mux is required.
 	if mux != nil {
-		// Registering with the trailing slash means the naked path is redirected to this path.
-		crpath := config.PathCreate + "/"
-		if config.CreateRequiresAuth {
-			mux.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreate))
-		} else {
-			mux.HandleFunc(crpath, handlerCreate)
-		}
-
 		// Set default auth paths where none was provided by the caller.
+		if config.PathCreate == "" {
+			config.PathCreate = "/auth/create"
+		}
 		if config.PathDelete == "" {
 			config.PathDelete = "/auth/delete"
 		}
@@ -172,6 +167,13 @@ func Init(configIn Config, mux *http.ServeMux) {
 			config.PathRefresh = "/auth/refresh"
 		}
 
+		// Registering with the trailing slash means the naked path is redirected to this path.
+		crpath := config.PathCreate + "/"
+		if config.CreateRequiresAuth {
+			mux.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreate))
+		} else {
+			mux.HandleFunc(crpath, handlerCreate)
+		}
 		lpf(logh.Info, "Registered handler: %s\n", crpath)
 		dltpath := config.PathDelete + "/"
 		mux.HandleFunc(dltpath, HandlerFuncAuthJWTWrapper(handlerDelete))
