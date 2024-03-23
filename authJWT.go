@@ -45,10 +45,10 @@ type Config struct {
 	// PasswordValidation is a slice of REGEX used for password validation. If nothing is
 	// provided, defaultPasswordValidation is used.
 	PasswordValidation []string
-	// PathCreate is the final portion of the URL path for create. If empty the
-	// default is used: /auth/create
-	// Valid HTTP methods: http.MethodPost
-	PathCreate string
+	// PathCreateOrUpdate is the final portion of the URL path for auth create or update.
+	// If empty the default is used: /auth/createorupdate
+	// Valid HTTP methods: http.MethodPost, http.MethodPut
+	PathCreateOrUpdate string
 	// PathDelete is the final portion of the URL path for delete. If empty the
 	// default is used: /auth/delete
 	// Valid HTTP methods: http.MethodDelete
@@ -145,8 +145,8 @@ func Init(configIn Config, mux *http.ServeMux) {
 	// For testing purposes, no mux is required.
 	if mux != nil {
 		// Set default auth paths where none was provided by the caller.
-		if config.PathCreate == "" {
-			config.PathCreate = "/auth/create"
+		if config.PathCreateOrUpdate == "" {
+			config.PathCreateOrUpdate = "/auth/createorupdate"
 		}
 		if config.PathDelete == "" {
 			config.PathDelete = "/auth/delete"
@@ -168,11 +168,11 @@ func Init(configIn Config, mux *http.ServeMux) {
 		}
 
 		// Registering with the trailing slash means the naked path is redirected to this path.
-		crpath := config.PathCreate + "/"
+		crpath := config.PathCreateOrUpdate + "/"
 		if config.CreateRequiresAuth {
-			mux.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreate))
+			mux.HandleFunc(crpath, HandlerFuncAuthJWTWrapper(handlerCreateOrUpdate))
 		} else {
-			mux.HandleFunc(crpath, handlerCreate)
+			mux.HandleFunc(crpath, handlerCreateOrUpdate)
 		}
 		lpf(logh.Info, "Registered handler: %s\n", crpath)
 		dltpath := config.PathDelete + "/"
@@ -217,7 +217,8 @@ func (cred *Credential) AuthCreate() error {
 }
 
 // Authenticated checks the request for a valid token and will return
-// the users CustomClaims.
+// the users CustomClaims, or an error is auth fails. On any error the header
+// is written with the appropriate http.Status; callers should not write header status.
 func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error) {
 	tokenString, err := tokenFromRequestHeader(r)
 	if err != nil {

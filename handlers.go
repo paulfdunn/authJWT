@@ -51,10 +51,11 @@ func HandlerFuncAuthJWTWrapper(hf func(w http.ResponseWriter, r *http.Request)) 
 	}
 }
 
-// handlerCreate is the handler to create an auth (entry in kvsAuth). The handler
-// will error if there is already an auth for the specified Email.
-func handlerCreate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
+// handlerCreateOrUpdate is the handler to create/update an auth (entry in kvsAuth). The handler
+// will error if there is already an auth for the specified Email for create (http.MethodPost).
+// Update (http.MethodPut) requires the user is logged in and provides a valid token.
+func handlerCreateOrUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPut {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
@@ -68,13 +69,24 @@ func handlerCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Either create or update require valid credentials in the body.
 	auth, err := authGet(em)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
-	} else if auth.PasswordHash != nil {
-		w.WriteHeader(http.StatusConflict)
-		return
+	}
+
+	// On create, the auth must not exist. On update, the user must be logged in.
+	if r.Method == http.MethodPost {
+		if auth.PasswordHash != nil {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+	} else { // http.MethodPut
+		_, err := Authenticated(w, r)
+		if err != nil {
+			return
+		}
 	}
 
 	if err := cred.AuthCreate(); err != nil {
@@ -85,7 +97,11 @@ func handlerCreate(w http.ResponseWriter, r *http.Request) {
 		rs.Body = fmt.Sprintf("body not logged, contains credentials for %s", *cred.Email)
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	if r.Method == http.MethodPost {
+		w.WriteHeader(http.StatusCreated)
+	} else { // http.MethodPut
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 // handlerDelete deletes the entries in kvsAuth and kvsToken for

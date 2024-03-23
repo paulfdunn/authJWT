@@ -33,6 +33,7 @@ func init() {
 	lpf = logh.Map[config.LogName].Printf
 }
 
+// TestAuthCreateGetDelete tests internal functions to create, get, and delete auth.
 func TestAuthCreateGetDelete(t *testing.T) {
 	testSetup()
 
@@ -71,6 +72,8 @@ func TestAuthCreateGetDelete(t *testing.T) {
 	}
 }
 
+// TestHandlerFuncAuthJWTWrapper tests the wrapper function to show that wrapping a handler
+// does then require authentication.
 func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
 	testSetup()
 
@@ -119,6 +122,7 @@ func TestHandlerFuncAuthJWTWrapper(t *testing.T) {
 	testServerWrapped.Close()
 }
 
+// TestAuthTokenCreate tests creating a token for a given auth.
 func TestAuthTokenCreate(t *testing.T) {
 	testSetup()
 
@@ -149,16 +153,18 @@ func TestAuthTokenCreate(t *testing.T) {
 	// fmt.Printf("claims %+v\n", *claimsOut)
 }
 
-func TestHandlerCreate(t *testing.T) {
+// TestHandlerCreateOrUpdate tests handlerCreateOrUpdate by creating an auth, verifying a GET
+// is rejected, and verifying a POST to an existing credential is rejected.
+func TestHandlerCreateOrUpdate(t *testing.T) {
 	testSetup()
 
-	testServer := httptest.NewServer(http.HandlerFunc(handlerCreate))
+	testServer := httptest.NewServer(http.HandlerFunc(handlerCreateOrUpdate))
 	em := "newAuth@auth.com"
 	pwd := "P@ass!234"
 	cred := Credential{Email: &em, Password: &pwd}
-	b, err := json.Marshal(cred)
+	credBytes, err := json.Marshal(cred)
 	if err != nil {
-		t.Errorf("TestHandlerCreate marshal error: %v", err)
+		t.Errorf("TestHandlerCreateOrUpdate marshal error: %v", err)
 		return
 	}
 
@@ -169,17 +175,17 @@ func TestHandlerCreate(t *testing.T) {
 		return
 	}
 
-	resp, err = http.Post(testServer.URL, "application/json", bytes.NewBuffer(b))
+	resp, err = http.Post(testServer.URL, "application/json", bytes.NewBuffer(credBytes))
 	if err != nil {
-		t.Errorf("TestHandlerCreate error: %v", err)
+		t.Errorf("TestHandlerCreateOrUpdate error: %v", err)
 		return
 	}
 	if resp.StatusCode != http.StatusCreated {
-		t.Errorf("TestHandlerCreate did not return proper status: %d", resp.StatusCode)
+		t.Errorf("TestHandlerCreateOrUpdate did not return proper status: %d", resp.StatusCode)
 		return
 	}
 
-	b, err = kvsAuth.Get(em)
+	_, err = kvsAuth.Get(em)
 	if err != nil {
 		t.Errorf("Get kvsAuth error: %v", err)
 		return
@@ -187,18 +193,52 @@ func TestHandlerCreate(t *testing.T) {
 	// No error, auth was created.
 
 	// negative test - should error on creating existing auth
-	resp, err = http.Post(testServer.URL, "application/json", bytes.NewBuffer(b))
+	resp, err = http.Post(testServer.URL, "application/json", bytes.NewBuffer(credBytes))
 	if err != nil {
-		t.Errorf("TestHandlerCreate error: %v", err)
+		t.Errorf("TestHandlerCreateOrUpdate error: %v", err)
 		return
 	}
 	if resp.StatusCode != http.StatusConflict {
-		t.Errorf("TestHandlerCreate did not return proper status: %d", resp.StatusCode)
+		t.Errorf("TestHandlerCreateOrUpdate did not return proper status: %d", resp.StatusCode)
 		return
 	}
 
+	// positive test - credential update.
+	// Login with current creds.
+	tokenBytes, _, err := login(t, credBytes)
+	if err != nil {
+		return
+	}
+	// Change creds.
+	pwd = "P@ass432!"
+	cred = Credential{Email: &em, Password: &pwd}
+	credBytes, err = json.Marshal(cred)
+	if err != nil {
+		t.Errorf("TestHandlerCreateOrUpdate marshal error: %v", err)
+		return
+	}
+	// Update creds with token from login.
+	req, err := http.NewRequest(http.MethodPut, testServer.URL, bytes.NewBuffer(credBytes))
+	if err != nil {
+		t.Errorf("NewRequest error: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+string(tokenBytes))
+	client := http.Client{}
+	resp, err = client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusNoContent {
+		t.Errorf("TestHandlerDelete did not return proper status: %d", resp.StatusCode)
+		return
+	}
+	// Login with updated creds.
+	tokenBytes, _, err = login(t, credBytes)
+	if err != nil {
+		return
+	}
 }
 
+// TestHandlerDelete creates an auth via direct function calls and verifies a call to the
+// delete handler deletes the auth.
 func TestHandlerDelete(t *testing.T) {
 	testSetup()
 
@@ -249,14 +289,15 @@ func TestHandlerDelete(t *testing.T) {
 		return
 	}
 
-	b, err := kvsAuth.Get(em)
-	if err != nil || b != nil {
+	kvsBytes, err := kvsAuth.Get(em)
+	if err != nil || kvsBytes != nil {
 		t.Error("Get kvsAuth had no error, or returned bytes, and should not have")
 		return
 	}
 
 }
 
+// TestHandlerInfo does several logins for one user and verifies the Info returned.
 func TestHandlerInfo(t *testing.T) {
 	testSetup()
 
@@ -301,27 +342,33 @@ func TestHandlerInfo(t *testing.T) {
 		t.Errorf("client.Do error: %v", err)
 		return
 	}
-	b, err := io.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Errorf("reading body error: %v", err)
 		return
 	}
 	info := Info{}
-	err = json.Unmarshal(b, &info)
+	err = json.Unmarshal(respBytes, &info)
 	if err != nil {
 		t.Errorf("unmarshal error: %v", err)
 		return
 	}
-	fmt.Printf("%+v\n", info)
+	// fmt.Printf("%+v\n", info)
 	if info.OutstandingTokens != manyLogins {
 		t.Errorf("Wrong number of OutstandingTokens")
 	}
 }
+
+// TestHandlerLogin runs two tests, one positive test and one negative test, of the login handler.
 func TestHandlerLogin(t *testing.T) {
 	testSetup()
 
-	// 0 - positive test, 1 - negative test; login with no auth created.
-	// create credentials, PUT it, verify the returned body can be parsed to a token.
+	// Loop 0 - positive test:
+	// create credentials, PUT with no body to verify error, PUT with credentials to
+	// verify the returned body can be parsed to a token.
+	// loop 1 - negative test; login with no auth created.
+	// create then delete credentials, PUT with no body to verify error, PUT with credentials to
+	// verify the returned body can be parsed to a token.
 	for i := 0; i <= 1; i++ {
 
 		// For i==1 get credentials but delete the auth.
@@ -349,7 +396,7 @@ func TestHandlerLogin(t *testing.T) {
 			return
 		}
 
-		// negative test - Put with no body.
+		// negative test - PUT with no body.
 		client := &http.Client{}
 		req, err := http.NewRequest(http.MethodPut, testServer.URL, nil)
 		if err != nil {
@@ -362,6 +409,7 @@ func TestHandlerLogin(t *testing.T) {
 			return
 		}
 
+		// positive test - PUT with credentials
 		expectedExpireTime := time.Now().Add(config.JWTAuthExpirationInterval).Unix()
 		req, err = http.NewRequest(http.MethodPut, testServer.URL, bytes.NewBuffer(credBytes))
 		if err != nil {
@@ -456,8 +504,8 @@ func TestHandlerLogout(t *testing.T) {
 		t.Errorf("Logout did not return proper status or was nil: %d", resp.StatusCode)
 		return
 	}
-	b, err := kvsToken.Get(claims.tokenKVSKey())
-	if !(b == nil && err == nil) {
+	kvsBytes, err := kvsToken.Get(claims.tokenKVSKey())
+	if !(kvsBytes == nil && err == nil) {
 		t.Error("TokenID not deleted.")
 		return
 	}
@@ -609,20 +657,20 @@ func TestRemoveExpiredTokens(t *testing.T) {
 			t.Errorf("parseClaims error: %v", err)
 			return
 		}
-		b, err := kvsToken.Get(claimsOut.tokenKVSKey())
-		if b == nil || err != nil {
+		kvsBytes, err := kvsToken.Get(claimsOut.tokenKVSKey())
+		if kvsBytes == nil || err != nil {
 			t.Errorf("kvsToken.Get error: %v", err)
 			return
 		}
 
 		removeExpiredTokens(removeDuration, removeDuration)
 		time.Sleep(removeDuration * 2)
-		b, _ = kvsToken.Get(claimsOut.tokenKVSKey())
-		if b != nil && v < removeDuration {
+		kvsBytes, _ = kvsToken.Get(claimsOut.tokenKVSKey())
+		if kvsBytes != nil && v < removeDuration {
 			t.Errorf("kvsToken.Get returned bytes and should not have")
 			return
 		} else {
-			fmt.Printf("TestRemoveExpiredTokens negative test passed\n")
+			// fmt.Printf("TestRemoveExpiredTokens negative test passed\n")
 		}
 	}
 }
@@ -690,12 +738,12 @@ func createAuth(t *testing.T, email *string) (string, []byte, error) {
 	ps := "P@ssword1234"
 	cred := &Credential{Email: &em, Password: &ps}
 	cred.AuthCreate()
-	b, err := json.Marshal(cred)
+	credBytes, err := json.Marshal(cred)
 	if err != nil {
 		t.Errorf("marshal error: %v", err)
 		return "", nil, err
 	}
-	return em, b, nil
+	return em, credBytes, nil
 }
 
 // login using the provided credentials and return a token and claims.
@@ -724,7 +772,7 @@ func login(t *testing.T, credBytes []byte) ([]byte, *CustomClaims, error) {
 		return nil, nil, err
 	}
 	resp.Body.Close()
-	fmt.Printf("tokenBytes :%s\n", string(tokenBytes))
+	// fmt.Printf("tokenBytes :%s\n", string(tokenBytes))
 	claimsOut, err := parseClaims(string(tokenBytes))
 	if err != nil {
 		t.Errorf("parseClaims error: %v", err)
@@ -734,7 +782,7 @@ func login(t *testing.T, credBytes []byte) ([]byte, *CustomClaims, error) {
 }
 
 func handlerTest(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("handlerTest was called!")
+	// fmt.Println("handlerTest was called!")
 	// Return with something other than default (200), so it is clear the handler was processed
 	w.WriteHeader(http.StatusNoContent)
 }
