@@ -12,10 +12,14 @@ import (
 )
 
 // AuditWriter is used to wrap the http.ResponseWriter passed to handlers in order to
-// store information that is then written to the audit log.
+// store information that is then written to the audit log as the handler exits.
+// Applications using this package need to populate the Message as is done in these handlers
+// in order for messages to show up in the audit log. Best practice is to only add logging
+// information to the audit log once all validations are complete and the command is returning
+// good status. Other information should be logged to an application log.
 type AuditWriter struct {
 	http.ResponseWriter
-	LogMsg     string
+	Message    string
 	StatusCode int
 }
 
@@ -31,7 +35,7 @@ func HandlerFuncNoAuthWrapper(hf func(w http.ResponseWriter, r *http.Request)) f
 		aw := &AuditWriter{w, "", 0}
 		hf(aw, r)
 		if r.Method == http.MethodDelete || r.Method == http.MethodPost || r.Method == http.MethodPut {
-			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", aw.StatusCode, r, aw.LogMsg)
+			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| msg: %s|\n\n", aw.StatusCode, r, aw.Message)
 		}
 	}
 }
@@ -48,7 +52,7 @@ func HandlerFuncAuthJWTWrapper(hf func(w http.ResponseWriter, r *http.Request)) 
 		}
 		hf(aw, r)
 		if r.Method == http.MethodDelete || r.Method == http.MethodPost || r.Method == http.MethodPut {
-			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", aw.StatusCode, r, aw.LogMsg)
+			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", aw.StatusCode, r, aw.Message)
 		}
 	}
 }
@@ -97,7 +101,7 @@ func handlerCreateOrUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if aw, ok := w.(*AuditWriter); ok {
-		aw.LogMsg = fmt.Sprintf("body not logged, contains credentials for %s", *cred.Email)
+		aw.Message = fmt.Sprintf("credential create or update for email: %s", *cred.Email)
 	}
 
 	if r.Method == http.MethodPost {
@@ -119,6 +123,10 @@ func handlerDelete(w http.ResponseWriter, r *http.Request) {
 	claims, err := Authenticated(w, r)
 	if err != nil {
 		return
+	}
+
+	if aw, ok := w.(*AuditWriter); ok {
+		aw.Message = fmt.Sprintf("auth and tokens deleted for email: %s", claims.Email)
 	}
 
 	// Remove all users tokens then delete the kvsAuth
@@ -195,6 +203,10 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if aw, ok := w.(*AuditWriter); ok {
+		aw.Message = fmt.Sprintf("login for email: %s", *cred.Email)
+	}
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(tokenString))
 }
@@ -223,6 +235,7 @@ func handlerLogoutCommon(w http.ResponseWriter, r *http.Request, logoutAll bool)
 	if err != nil {
 		return
 	}
+
 	if logoutAll {
 		_, err := userTokens(claims.Email, true)
 		if err != nil {
@@ -230,8 +243,19 @@ func handlerLogoutCommon(w http.ResponseWriter, r *http.Request, logoutAll bool)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		if aw, ok := w.(*AuditWriter); ok {
+			aw.Message = fmt.Sprintf("all tokens deleted for email: %s", claims.Email)
+		}
 	} else {
-		kvsToken.Delete(claims.tokenKVSKey())
+		n, err := kvsToken.Delete(claims.tokenKVSKey())
+		if err != nil {
+			lpf(logh.Error, "kvsToken.Delete error:%v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if aw, ok := w.(*AuditWriter); ok {
+			aw.Message = fmt.Sprintf("%d tokens deleted for email: %s", n, claims.Email)
+		}
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -260,7 +284,15 @@ func handlerRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kvsToken.Delete(claims.tokenKVSKey())
+	n, err := kvsToken.Delete(claims.tokenKVSKey())
+	if err != nil {
+		lpf(logh.Error, "kvsToken.Delete error:%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if aw, ok := w.(*AuditWriter); ok {
+		aw.Message = fmt.Sprintf("%d tokens deleted during token refresh for email: %s", n, claims.Email)
+	}
 	w.WriteHeader(http.StatusCreated)
 	w.Write([]byte(tokenString))
 }
