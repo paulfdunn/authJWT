@@ -119,10 +119,9 @@ func handlerDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Remove all users tokens then delete the kvsAuth
+	// handlerLogoutCommon sets http.StatusNoContent
 	handlerLogoutCommon(w, r, true)
 	kvsAuth.Delete(claims.Email)
-
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // handlerInfo will return an Info object for the caller.

@@ -104,6 +104,10 @@ type authentication struct {
 const (
 	authJWTAuthKVS = "authJWTAuth"
 	authTokenKVS   = "authJWTToken"
+
+	// bcrypt, used to hash the password, has a length limit of 72
+	// https://pkg.go.dev/golang.org/x/crypto@v0.21.0/bcrypt#GenerateFromPassword
+	passwordLengthLimit = 72
 )
 
 var (
@@ -247,6 +251,9 @@ func (cc CustomClaims) tokenKVSKey() string {
 func (cred *Credential) validate() error {
 	if cred.Email == nil || cred.Password == nil {
 		return fmt.Errorf("%s either email or password were nil in credential", runtimeh.SourceInfo())
+	}
+	if len(*cred.Password) > passwordLengthLimit {
+		return fmt.Errorf("%s password exceeds length limit of %d", runtimeh.SourceInfo(), passwordLengthLimit)
 	}
 
 	em := strings.TrimSpace(*cred.Email)
