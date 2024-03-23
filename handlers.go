@@ -52,7 +52,7 @@ func HandlerFuncAuthJWTWrapper(hf func(w http.ResponseWriter, r *http.Request)) 
 		}
 		hf(aw, r)
 		if r.Method == http.MethodDelete || r.Method == http.MethodPost || r.Method == http.MethodPut {
-			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", aw.StatusCode, r, aw.Message)
+			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| msg: %s|\n\n", aw.StatusCode, r, aw.Message)
 		}
 	}
 }
