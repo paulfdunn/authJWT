@@ -91,6 +91,7 @@ func handlerCreateOrUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if err := cred.AuthCreate(); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
 
 	if rs, ok := w.(*ResponseStatus); ok {
