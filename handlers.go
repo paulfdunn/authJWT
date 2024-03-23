@@ -11,25 +11,27 @@ import (
 	"github.com/paulfdunn/go-helper/neth/httph"
 )
 
-type ResponseStatus struct {
+// AuditWriter is used to wrap the http.ResponseWriter passed to handlers in order to
+// store information that is then written to the audit log.
+type AuditWriter struct {
 	http.ResponseWriter
-	Body       string
+	LogMsg     string
 	StatusCode int
 }
 
-func (rs *ResponseStatus) WriteHeader(status int) {
-	rs.StatusCode = status
-	rs.ResponseWriter.WriteHeader(status)
+func (aw *AuditWriter) WriteHeader(status int) {
+	aw.StatusCode = status
+	aw.ResponseWriter.WriteHeader(status)
 }
 
 // HandlerFuncNoAuthWrapper is a basic wrapper that DOES NOT authenticate, but does
 // handle audit logging (logging for all DELETE/POST/PUT methods)
 func HandlerFuncNoAuthWrapper(hf func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rs := &ResponseStatus{w, "", 0}
-		hf(rs, r)
+		aw := &AuditWriter{w, "", 0}
+		hf(aw, r)
 		if r.Method == http.MethodDelete || r.Method == http.MethodPost || r.Method == http.MethodPut {
-			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", rs.StatusCode, r, rs.Body)
+			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", aw.StatusCode, r, aw.LogMsg)
 		}
 	}
 }
@@ -39,14 +41,14 @@ func HandlerFuncNoAuthWrapper(hf func(w http.ResponseWriter, r *http.Request)) f
 // Note this wrapper also handles audit logging (logging for all DELETE/POST/PUT methods)
 func HandlerFuncAuthJWTWrapper(hf func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rs := &ResponseStatus{w, "", 0}
-		_, err := Authenticated(rs, r)
+		aw := &AuditWriter{w, "", 0}
+		_, err := Authenticated(aw, r)
 		if err != nil {
 			return
 		}
-		hf(rs, r)
+		hf(aw, r)
 		if r.Method == http.MethodDelete || r.Method == http.MethodPost || r.Method == http.MethodPut {
-			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", rs.StatusCode, r, rs.Body)
+			logh.Map[config.AuditLogName].Printf(logh.Audit, "status: %d| req:%+v| body: %s|\n\n", aw.StatusCode, r, aw.LogMsg)
 		}
 	}
 }
@@ -94,8 +96,8 @@ func handlerCreateOrUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if rs, ok := w.(*ResponseStatus); ok {
-		rs.Body = fmt.Sprintf("body not logged, contains credentials for %s", *cred.Email)
+	if aw, ok := w.(*AuditWriter); ok {
+		aw.LogMsg = fmt.Sprintf("body not logged, contains credentials for %s", *cred.Email)
 	}
 
 	if r.Method == http.MethodPost {
