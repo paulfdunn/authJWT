@@ -13,12 +13,11 @@ import (
 // value stores (KVS) for authentication and tokens.
 func initializeKVS(dataSourcePath string) {
 	var err error
-	// The KVS table name and key will both use authJWTAuthKVS.
-	if kvsAuth, err = kvs.New(dataSourcePath, authJWTAuthKVS); err != nil {
+	if kvsAuth, err = kvs.New(dataSourcePath, kvsAuthTable); err != nil {
 		log.Fatalf("fatal: %s fatal: could not create New kvs, error: %v", runtimeh.SourceInfo(), err)
 	}
 
-	if kvsToken, err = kvs.New(dataSourcePath, authTokenKVS); err != nil {
+	if kvsToken, err = kvs.New(dataSourcePath, kvsTokenTable); err != nil {
 		log.Fatalf("fatal: %s fatal: could not create New kvs, error: %v", runtimeh.SourceInfo(), err)
 	}
 }

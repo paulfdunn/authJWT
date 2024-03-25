@@ -103,8 +103,8 @@ type authentication struct {
 }
 
 const (
-	authJWTAuthKVS = "authJWTAuth"
-	authTokenKVS   = "authJWTToken"
+	kvsAuthTable  = "authJWTAuth"
+	kvsTokenTable = "authJWTToken"
 
 	// bcrypt, used to hash the password, has a length limit of 72
 	// https://pkg.go.dev/golang.org/x/crypto@v0.21.0/bcrypt#GenerateFromPassword
