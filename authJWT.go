@@ -230,14 +230,9 @@ func (cred *Credential) AuthCreate() error {
 // exist in kvsToken; meaning the user has not logged out with that token. On any error the header
 // is written with the appropriate http.Status; callers should not write header status.
 func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error) {
-	tokenString, err := tokenFromRequestHeader(r)
-	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		return nil, err
-	}
-	claims, err := parseClaims(tokenString)
-	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
+	var claims *CustomClaims
+	var err error
+	if claims, err = AuthenticatedNoTokenInvalidation(w, r); err != nil {
 		return nil, err
 	}
 	// Validate the token is in the token store; it may be invalidated by the user logging out,
