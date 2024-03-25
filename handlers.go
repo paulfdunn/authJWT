@@ -46,7 +46,12 @@ func HandlerFuncNoAuthWrapper(hf func(w http.ResponseWriter, r *http.Request)) f
 func HandlerFuncAuthJWTWrapper(hf func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		aw := &AuditWriter{w, "", 0}
-		_, err := Authenticated(aw, r)
+		var err error
+		if config.DataSourcePath != "" {
+			_, err = Authenticated(aw, r)
+		} else {
+			_, err = AuthenticatedNoTokenInvalidation(aw, r)
+		}
 		if err != nil {
 			return
 		}

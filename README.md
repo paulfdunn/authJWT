@@ -5,7 +5,8 @@ This package is used by github.com/paulfdunn/rest-app, see that project for exam
 
 Key features:
 * Authentication is handled using JWT (JSON Web Tokens).
-* Authentication supports 2 models: anyone can create a login, or only a registered user can create a new login. The later is the default in the example app.
+* Authentication supports 2 user creation models: anyone can create a login, or only a registered user can create a new login. The later is the default in the example app.
+* Authentication supports 2 runtime models: You can include authJWT in your service, or you can use authJWT to create an auth service to be used by one or more independent services. In the later model, token are issues by the authentication service using a relatively short expiration interval, and client services can only validate that a token was valid when issued. Client services cannot verify the user hasn't used the authentication service to log out or invalidate all tokens. 
 * Authentication supports REGEX based validation/rules for passwords.
 * All authentication data and tokens are stored in a SQLITE database.
   * Passwords are hashed, then stored. The clear text password is not persisted.
@@ -20,4 +21,4 @@ Applications only need call Init with a Config object, and optional http.ServeMu
 
 Once initialized, authJWT handlers will respond to the specified paths to let callers: create/delete/update their authentication, login/logout (logout from the calling device)/logout-all (logout of any device), refresh (extend the time a token is valid), or get information about their authentication.
 
-For detailed usage and an example application, see github.com/paulfdunn/rest-app.
+For detailed usage and example applications, see github.com/paulfdunn/rest-app. There are examples of both authentication embedded in a service, and running as an independent service.

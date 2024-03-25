@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -141,6 +142,8 @@ func Init(configIn Config, mux *http.ServeMux) {
 
 	if config.JWTKeyPath == "" {
 		lpf(logh.Error, "JWTKeyPath is nil - only valid for testing purposes.")
+	} else if _, err := os.Stat(config.JWTKeyPath); err != nil {
+		lpf(logh.Error, "JWTKeyPath %s is not valid", config.JWTKeyPath)
 	} else {
 		tokenKeyLoad(config.JWTKeyPath)
 	}
@@ -199,9 +202,11 @@ func Init(configIn Config, mux *http.ServeMux) {
 		lpf(logh.Info, "Registered handler: %s\n", rfpath)
 	}
 
-	initializeKVS(config.DataSourcePath)
-	passwordValidationLoad()
-	removeExpiredTokens(config.JWTAuthRemoveInterval, config.JWTAuthExpirationInterval)
+	if config.DataSourcePath != "" {
+		initializeKVS(config.DataSourcePath)
+		passwordValidationLoad()
+		removeExpiredTokens(config.JWTAuthRemoveInterval, config.JWTAuthExpirationInterval)
+	}
 }
 
 // AuthCreate creates or updates an ID/authentication pair to kvsAuth. The scope of the function
@@ -221,7 +226,8 @@ func (cred *Credential) AuthCreate() error {
 }
 
 // Authenticated checks the request for a valid token and will return
-// the users CustomClaims, or an error is auth fails. On any error the header
+// the users CustomClaims, or an error is auth fails. The token is verified to still
+// exist in kvsToken; meaning the user has not logged out with that token. On any error the header
 // is written with the appropriate http.Status; callers should not write header status.
 func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error) {
 	tokenString, err := tokenFromRequestHeader(r)
@@ -234,10 +240,32 @@ func Authenticated(w http.ResponseWriter, r *http.Request) (*CustomClaims, error
 		w.WriteHeader(http.StatusUnauthorized)
 		return nil, err
 	}
+	// Validate the token is in the token store; it may be invalidated by the user logging out,
+	// or the token expiring.
 	b, err := kvsToken.Get(claims.tokenKVSKey())
 	if b == nil || err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		return nil, fmt.Errorf("%s token not valid", runtimeh.SourceInfo())
+	}
+	return claims, nil
+}
+
+// AuthenticatedNoTokenInvalidation checks the request for a valid token and will return
+// the users CustomClaims, or an error is auth fails. The token is NOT verified to still
+// exist in kvsToken; the token may have been invalidated but no error from this function
+// means the token was valid at some point. This function should only be used by independent
+// services that recieve tokens but don't have access to kvsToken. On any error the header
+// is written with the appropriate http.Status; callers should not write header status.
+func AuthenticatedNoTokenInvalidation(w http.ResponseWriter, r *http.Request) (*CustomClaims, error) {
+	tokenString, err := tokenFromRequestHeader(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return nil, err
+	}
+	claims, err := parseClaims(tokenString)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return nil, err
 	}
 	return claims, nil
 }
