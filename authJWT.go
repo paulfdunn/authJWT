@@ -329,7 +329,7 @@ func authTokenStringCreate(email string) (string, error) {
 		tokenID,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	buf := new(bytes.Buffer)
 	err = binary.Write(buf, binary.LittleEndian, claims.ExpiresAt)
 	if err != nil {
