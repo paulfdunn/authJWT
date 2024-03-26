@@ -118,7 +118,7 @@ var (
 	// default password validation: 8-32 characters, 1 lower case, 1 upper case, 1 special, 1 number.
 	defaultPasswordValidation = []string{`^[\S]{8,32}$`, `[a-z]`, `[A-Z]`, `[!#$%'()*+,-.\\/:;=?@\[\]^_{|}~]`, `[0-9]`}
 
-	// lp     func(level logh.LoghLevel, v ...interface{})
+	lp  func(level logh.LoghLevel, v ...interface{})
 	lpf func(level logh.LoghLevel, format string, v ...interface{})
 
 	// The auth KVS stores authentications; one per Email.
@@ -137,7 +137,7 @@ var (
 func Init(configIn Config, mux *http.ServeMux) {
 	config = configIn
 
-	// lp = logh.Map[config.LogName].Println
+	lp = logh.Map[config.LogName].Println
 	lpf = logh.Map[config.LogName].Printf
 
 	if config.JWTKeyPath == "" {
@@ -203,9 +203,12 @@ func Init(configIn Config, mux *http.ServeMux) {
 	}
 
 	if config.DataSourcePath != "" {
+		lpf(logh.Info, "authJWT running with DataSourcePath: %s", config.DataSourcePath)
 		initializeKVS(config.DataSourcePath)
 		passwordValidationLoad()
 		removeExpiredTokens(config.JWTAuthRemoveInterval, config.JWTAuthExpirationInterval)
+	} else {
+		lp(logh.Info, "authJWT running without DataSourcePath - tokens can only be validated")
 	}
 }
 
@@ -326,7 +329,7 @@ func authTokenStringCreate(email string) (string, error) {
 		tokenID,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	buf := new(bytes.Buffer)
 	err = binary.Write(buf, binary.LittleEndian, claims.ExpiresAt)
 	if err != nil {
