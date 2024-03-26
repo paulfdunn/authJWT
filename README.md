@@ -12,6 +12,7 @@ Key features:
   * Passwords are hashed, then stored. The clear text password is not persisted.
 * Multiple tokens are allowed per user, allowing login/logout from different devices.
 * The provided wrappers log all DELETE/POST/PUT calls to an audit log.
+* Uses jwt.SigningMethodRS256, so the public key can be used to decode a token.
 
 ## Security
 Use only HTTPS to prevent tokens being stolen in-flight; I.E. public wi-fi with HTTP. Callers should not store the tokens. Use the token for the session only; the user can save their credentials via their browser, if they chose, to make logging in easier. Do also allow your users access to logout-all, as well as to the number of tokens available for their ID.

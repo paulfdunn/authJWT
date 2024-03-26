@@ -1,0 +1,7 @@
+# KEYS SHOULD NOT BE STORED WITH CODE.
+# These are just here for testing.
+#
+# Generating the JWT keys:
+# openssl genrsa -out jwt.rsa.private 1024
+# openssl rsa -in jwt.rsa.private -out jwt.rsa.public -pubout -outform PEM
+# See create_self_signed_keys.sh regarding the cert/key used for TLS.

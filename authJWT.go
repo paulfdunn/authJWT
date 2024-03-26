@@ -4,10 +4,10 @@ package authJWT
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/binary"
 	"fmt"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -38,8 +38,10 @@ type Config struct {
 	JWTAuthRemoveInterval time.Duration
 	// JWTAuthExpirationInterval is the duration for which a token is valid.
 	JWTAuthExpirationInterval time.Duration
-	// JWTKeyPath is the path to the private key used for signing the tokens.
-	JWTKeyPath string
+	// JWTPrivateKeyPath is the path to the private key used for signing the tokens.
+	JWTPrivateKeyPath string
+	// JWTPublicKeyPath is the path to the public key used for signing the tokens.
+	JWTPublicKeyPath string
 	// LogName is the name of the logh logger for general logging. Callers
 	// must create their own logh loggers or output will go to STDOUT.
 	LogName string
@@ -128,7 +130,8 @@ var (
 	kvsToken           kvs.KVS
 	passwordValidation []*regexp.Regexp
 
-	tokenKey []byte
+	rsaPrivateKey *rsa.PrivateKey
+	rsaPublicKey  *rsa.PublicKey
 )
 
 // Init initializes the package.
@@ -140,13 +143,7 @@ func Init(configIn Config, mux *http.ServeMux) {
 	lp = logh.Map[config.LogName].Println
 	lpf = logh.Map[config.LogName].Printf
 
-	if config.JWTKeyPath == "" {
-		lpf(logh.Error, "JWTKeyPath is nil - only valid for testing purposes.")
-	} else if _, err := os.Stat(config.JWTKeyPath); err != nil {
-		lpf(logh.Error, "JWTKeyPath %s is not valid", config.JWTKeyPath)
-	} else {
-		tokenKeyLoad(config.JWTKeyPath)
-	}
+	loadKeys(config)
 
 	// Applicaitons must provide a mux or register the handlers themselves.
 	// For testing purposes, no mux is required.
@@ -329,14 +326,14 @@ func authTokenStringCreate(email string) (string, error) {
 		tokenID,
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	buf := new(bytes.Buffer)
 	err = binary.Write(buf, binary.LittleEndian, claims.ExpiresAt)
 	if err != nil {
 		runtimeh.SourceInfoError("binary.Write failed", err)
 	}
 	kvsToken.Set(claims.tokenKVSKey(), buf.Bytes())
-	return token.SignedString(tokenKey)
+	return token.SignedString(rsaPrivateKey)
 }
 
 // parseClaims parses a JWT token string (from the Authorization header)
@@ -345,7 +342,7 @@ func parseClaims(tokenString string) (*CustomClaims, error) {
 	claimsIn := &CustomClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claimsIn,
 		func(token *jwt.Token) (interface{}, error) {
-			return tokenKey, nil
+			return rsaPublicKey, nil
 		})
 	if err != nil {
 		return nil, runtimeh.SourceInfoError("ParseWithClaims error", err)

@@ -85,7 +85,7 @@ func TestAuthTokenCreate(t *testing.T) {
 	claimsIn := &CustomClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claimsIn,
 		func(token *jwt.Token) (interface{}, error) {
-			return tokenKey, nil
+			return rsaPublicKey, nil
 		})
 	if err != nil {
 		t.Errorf("ParseWithClaims, error: %v", err)
@@ -252,7 +252,10 @@ func testSetup() {
 	os.Remove(dataSourcePath)
 
 	config = Config{AppName: "auth", AuditLogName: "auth.audit", LogName: "auth",
-		JWTAuthExpirationInterval: time.Minute * 15}
+		JWTAuthExpirationInterval: time.Minute * 15,
+		JWTPrivateKeyPath:         "./key/jwt.rsa.private",
+		JWTPublicKeyPath:          "./key/jwt.rsa.public",
+	}
 	config.DataSourcePath = dataSourcePath
 	Init(config, nil)
 }
