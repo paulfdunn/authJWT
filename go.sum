@@ -6,8 +6,6 @@ github.com/paulfdunn/go-helper/databaseh v1.4.7 h1:HW1ZzP1JnFi28G2Dsy3OyQpL9qZlF
 github.com/paulfdunn/go-helper/databaseh v1.4.7/go.mod h1:MJ6Gn4UJ9KVdeWibpVP1rO7co0/hpr+xQe0zcgcPfKE=
 github.com/paulfdunn/go-helper/logh v1.3.7 h1:Zp45aTmVLn4047TDR3Q3xKeKZjA9GqdsWVLLdROtYqQ=
 github.com/paulfdunn/go-helper/logh v1.3.7/go.mod h1:kQ9ecllPxtj+ipymHiRZ1aKRQCjSQn/eoQlwy1hK4qQ=
-github.com/paulfdunn/go-helper/neth v1.4.4 h1:EpCrU8cVZiIYbHaSN+mg0p9AUawBQXl2GMScyA5woWY=
-github.com/paulfdunn/go-helper/neth v1.4.4/go.mod h1:6YuyWt5P9oFhW54v+DNVFZk4zpFAmuiAAbuKQNCGgzE=
 github.com/paulfdunn/go-helper/neth v1.4.7 h1:Y+sKOcQRXCbe0uuIqAW/u1D0Lan+nZehMPp1c8eblz0=
 github.com/paulfdunn/go-helper/neth v1.4.7/go.mod h1:6opzfI7ndWJUAqkJaKdCqMFdM3F5h1wpOBx+gU9RnkE=
 github.com/paulfdunn/go-helper/osh v1.3.7 h1:lKfKpUVtfgC6Ip6O1WHjl13+ZPDYJHJNoTYGc291UrA=
