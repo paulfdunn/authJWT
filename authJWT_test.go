@@ -252,9 +252,7 @@ func testSetup() {
 	os.Remove(dataSourcePath)
 
 	config = Config{AppName: "auth", AuditLogName: "auth.audit", LogName: "auth",
-		JWTAuthExpirationInterval: time.Minute * 15,
-		JWTPrivateKeyPath:         "./key/jwt.rsa.private",
-		JWTPublicKeyPath:          "./key/jwt.rsa.public",
+		JWTAuthExpirationInterval: time.Minute * 15, testing: true,
 	}
 	config.DataSourcePath = dataSourcePath
 	Init(config, nil)

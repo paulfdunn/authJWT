@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -76,6 +77,8 @@ type Config struct {
 	// default is used: /auth/refresh
 	// Valid HTTP methods: http.MethodPost
 	PathRefresh string
+	// testing true bypasses loading keys.
+	testing bool
 }
 
 // Credential is what is supplied by the HTTP request in order to authenticate.
@@ -143,7 +146,17 @@ func Init(configIn Config, mux *http.ServeMux) {
 	lp = logh.Map[config.LogName].Println
 	lpf = logh.Map[config.LogName].Printf
 
-	loadKeys(config)
+	if configIn.testing {
+		var err error
+		rsaPrivateKey, err = rsa.GenerateKey(rand.Reader, 1024)
+		if err != nil {
+			log.Fatalf("could not generate keys for testing, error: %+v", err)
+		}
+		pubKey := rsaPrivateKey.Public().(*rsa.PublicKey)
+		rsaPublicKey = pubKey
+	} else {
+		loadKeys(config)
+	}
 
 	// Applicaitons must provide a mux or register the handlers themselves.
 	// For testing purposes, no mux is required.
