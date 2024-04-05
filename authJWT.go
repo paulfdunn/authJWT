@@ -215,7 +215,9 @@ func Init(configIn Config, mux *http.ServeMux) {
 	if config.DataSourcePath != "" {
 		lpf(logh.Info, "authJWT running with DataSourcePath: %s", config.DataSourcePath)
 		initializeKVS(config.DataSourcePath)
-		passwordValidationLoad()
+		if err := passwordValidationLoad(); err != nil {
+			lpf(logh.Error, "passwordValidationLoad error:%+v", err)
+		}
 		removeExpiredTokens(config.JWTAuthRemoveInterval, config.JWTAuthExpirationInterval)
 	} else {
 		lp(logh.Info, "authJWT running without DataSourcePath - tokens can only be validated")
@@ -343,9 +345,13 @@ func authTokenStringCreate(email string) (string, error) {
 	buf := new(bytes.Buffer)
 	err = binary.Write(buf, binary.LittleEndian, claims.ExpiresAt)
 	if err != nil {
-		runtimeh.SourceInfoError("binary.Write failed", err)
+		if err := runtimeh.SourceInfoError("binary.Write failed", err); err != nil {
+			lpf(logh.Error, "runtimeh.SourceInfoError error:%+v", err)
+		}
 	}
-	kvsToken.Set(claims.tokenKVSKey(), buf.Bytes())
+	if err := kvsToken.Set(claims.tokenKVSKey(), buf.Bytes()); err != nil {
+		lpf(logh.Error, "kvsToken.Set error:%+v", err)
+	}
 	return token.SignedString(rsaPrivateKey)
 }
 
@@ -475,7 +481,9 @@ func userTokens(email string, remove bool) (int, error) {
 
 		if strings.HasPrefix(keys[i], email) {
 			if remove {
-				kvsToken.Delete(keys[i])
+				if _, err := kvsToken.Delete(keys[i]); err != nil {
+					lpf(logh.Error, "kvsToken.Delete error:%+v", err)
+				}
 			}
 			count++
 		}

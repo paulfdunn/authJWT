@@ -301,10 +301,14 @@ func TestHandlerLogin(t *testing.T) {
 		tem := fmt.Sprintf("testLogin@auth.com.%d", i)
 		_, credBytes, err := createAuth(t, &tem)
 		if err != nil {
+			t.Errorf("createAuth error:%+v", err)
 			return
 		}
 		if i == 1 {
-			authDelete(tem)
+			if _, err := authDelete(tem); err != nil {
+				t.Errorf("authDelete error: %+v", err)
+				return
+			}
 		}
 
 		// tokenBytes, claims, err := login(t, credBytes)

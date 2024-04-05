@@ -137,7 +137,9 @@ func handlerDelete(w http.ResponseWriter, r *http.Request) {
 	// Remove all users tokens then delete the kvsAuth
 	// handlerLogoutCommon sets http.StatusNoContent
 	handlerLogoutCommon(w, r, true)
-	kvsAuth.Delete(claims.Email)
+	if _, err := kvsAuth.Delete(claims.Email); err != nil {
+		lpf(logh.Error, "kvsAuth.Delete error: %+v", err)
+	}
 }
 
 // handlerInfo will return an Info object for the caller.
@@ -166,7 +168,9 @@ func handlerInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	w.Write(b)
+	if _, err := w.Write(b); err != nil {
+		lpf(logh.Error, "w.Write error:%+v", err)
+	}
 }
 
 // handlerLogin will validate a callers credentials and, if the credentials are
@@ -213,7 +217,9 @@ func handlerLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(tokenString))
+	if _, err := w.Write([]byte(tokenString)); err != nil {
+		lpf(logh.Error, "w.Write error:%+v", err)
+	}
 }
 
 // handlerLogout will delete the token the caller is currently using,
@@ -299,5 +305,7 @@ func handlerRefresh(w http.ResponseWriter, r *http.Request) {
 		aw.Message = fmt.Sprintf("%d tokens deleted during token refresh for email: %s", n, claims.Email)
 	}
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte(tokenString))
+	if _, err := w.Write([]byte(tokenString)); err != nil {
+		lpf(logh.Error, "w.Write error:%+v", err)
+	}
 }

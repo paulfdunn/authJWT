@@ -136,8 +136,6 @@ func TestRemoveExpiredTokens(t *testing.T) {
 		if kvsBytes != nil && v < removeDuration {
 			t.Errorf("kvsToken.Get returned bytes and should not have")
 			return
-		} else {
-			// fmt.Printf("TestRemoveExpiredTokens negative test passed\n")
 		}
 	}
 }
@@ -204,7 +202,10 @@ func createAuth(t *testing.T, email *string) (string, []byte, error) {
 	}
 	ps := "P@ssword1234"
 	cred := &Credential{Email: &em, Password: &ps}
-	cred.AuthCreate()
+	if err := cred.AuthCreate(); err != nil {
+		t.Errorf("cred.AuthCreate error: %v", err)
+		return "", nil, err
+	}
 	credBytes, err := json.Marshal(cred)
 	if err != nil {
 		t.Errorf("marshal error: %v", err)
