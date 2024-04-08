@@ -152,6 +152,7 @@ func Init(configIn Config, mux *http.ServeMux) {
 		if err != nil {
 			log.Fatalf("could not generate keys for testing, error: %+v", err)
 		}
+		//nolint:errcheck // There is no error value to check.
 		pubKey := rsaPrivateKey.Public().(*rsa.PublicKey)
 		rsaPublicKey = pubKey
 	} else {
@@ -366,6 +367,7 @@ func parseClaims(tokenString string) (*CustomClaims, error) {
 	if err != nil {
 		return nil, runtimeh.SourceInfoError("ParseWithClaims error", err)
 	}
+	//nolint:errcheck // There is no error value to check.
 	claimsOut := token.Claims.(*CustomClaims)
 	if !token.Valid {
 		return nil, fmt.Errorf("%s token not valid, token: %+v", runtimeh.SourceInfo(), *token)
