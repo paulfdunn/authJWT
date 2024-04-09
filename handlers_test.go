@@ -1,4 +1,4 @@
-package authJWT
+package authjwt
 
 import (
 	"bytes"

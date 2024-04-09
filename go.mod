@@ -1,4 +1,4 @@
-module github.com/paulfdunn/authJWT
+module github.com/paulfdunn/authjwt
 
 go 1.21.8
 

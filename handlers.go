@@ -1,6 +1,6 @@
-// Package authJWT implements JWT authentication.
+// Package authjwt implements JWT authentication.
 
-package authJWT
+package authjwt
 
 import (
 	"encoding/json"
