@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/paulfdunn/go-helper/logh"
 	"github.com/paulfdunn/go-helper/osh/runtimeh"
+
+	jwt "github.com/dgrijalva/jwt-go"
 )
 
 var (
