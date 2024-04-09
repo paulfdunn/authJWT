@@ -394,6 +394,7 @@ func passwordVerifyHash(password string, hash []byte) error {
 // and will remove tokens from kvsToken if expiresAt is more than expireInterval
 // old.
 // Calling with rate == 0 causes the go routine to return after running once.
+// The logging alias lpf is not used as that triggers race detection errors in testing.
 func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
 	go func() {
 		keys, err := kvsToken.Keys()
@@ -401,7 +402,7 @@ func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
 			for i := range keys {
 				b, err := kvsToken.Get(keys[i])
 				if err != nil {
-					lpf(logh.Error, "getting token: %v\n", err)
+					logh.Map[config.LogName].Printf(logh.Error, "getting token: %v\n", err)
 					continue
 				}
 
@@ -409,20 +410,20 @@ func removeExpiredTokens(rate time.Duration, expireInterval time.Duration) {
 				var expiresAt int64
 				err = binary.Read(buf, binary.LittleEndian, &expiresAt)
 				if err != nil {
-					lpf(logh.Error, "reading expiresAt: %v\n", err)
+					logh.Map[config.LogName].Printf(logh.Error, "reading expiresAt: %v\n", err)
 					continue
 				}
 				if time.Since(time.Unix(expiresAt, 0)) > expireInterval {
 					_, err := kvsToken.Delete(keys[i])
 					if err != nil {
-						lpf(logh.Error, "deleting expired token: %v\n", err)
+						logh.Map[config.LogName].Printf(logh.Error, "deleting expired token: %v\n", err)
 						continue
 					}
 				}
 
 			}
 		} else {
-			lpf(logh.Error, "getting keys: %v\n", err)
+			logh.Map[config.LogName].Printf(logh.Error, "getting keys: %v\n", err)
 		}
 
 		if rate == 0 {
